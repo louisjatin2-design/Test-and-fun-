@@ -17,6 +17,7 @@ Der Umsetzungsplan — Datenquellen, Datenmodell, Ranking-Methodik, Synergie-Erk
 | **Listenbuilder** | Live-Validierung bei jeder Änderung, legalitätsgefilterte Zuweisungen, Budgetleiste mit Vorschau, Undo/Redo, Autosave, Export |
 | **Validator** | Punktelimit, Fraktion, Rule of Three, Epic Heroes, Enhancements, Leader-Anschluss, Transportkapazität, Warlord |
 | **Live-Updates** | Erkennt neue Wahapedia-Stände im Betrieb, lädt sie nach und meldet sie offenen Browsern — ohne Neustart |
+| **Mobil bedienbar** | Regel-Inspektor als Bottom Sheet, fingerfreundliche Trefferflächen, „Zum Home-Bildschirm" tauglich |
 
 Noch offen: Turnierdaten-Ingestion (Phase 1–3), Synergie-Engine (Phase 5), Generator (Phase 6/8). Der Meta-Abschnitt im Inspektor ist dafür vorbereitet und meldet bis dahin ehrlich „noch keine Daten".
 
@@ -33,6 +34,40 @@ Der ETL legt `data/warhammer_meta.sqlite3` an. Ohne Netz geht es auch aus einem 
 ```bash
 python -m app.etl.wahapedia --from-dir ./meine-csvs
 ```
+
+### Auf iPad oder Handy öffnen
+
+Die App läuft auf deinem Rechner; das Tablet oder Telefon ruft sie über das heimische WLAN auf. Beide Geräte müssen im **selben Netz** sein.
+
+**1. Server für das Netz freigeben.** Standardmäßig hört er nur auf `localhost` und ist von anderen Geräten nicht erreichbar:
+
+```bash
+WH_BIND_HOST=0.0.0.0 uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+```
+
+**2. IP-Adresse des Rechners herausfinden:**
+
+```bash
+hostname -I | awk '{print $1}'      # Linux
+ipconfig getifaddr en0              # macOS (WLAN)
+ipconfig                            # Windows: "IPv4-Adresse"
+```
+
+**3. Auf dem Gerät aufrufen:** `http://<IP-des-Rechners>:8000`, zum Beispiel `http://192.168.1.42:8000`.
+
+**4. Optional als App ablegen.** Safari → Teilen → „Zum Home-Bildschirm"; Chrome auf Android → Menü → „App installieren". Die Seite startet dann ohne Browserleiste.
+
+Klappt es nicht, blockiert meist die Firewall des Rechners den Port — unter macOS und Windows muss Python einmalig für eingehende Verbindungen freigegeben werden.
+
+#### Wichtig: `0.0.0.0` ist nicht mehr nur lokal
+
+Mit dieser Bindung ist die App für **jedes Gerät im selben Netz** erreichbar, nicht nur für deine. Die App warnt beim Start entsprechend. Im eigenen WLAN mit den eigenen Geräten bleibt das die private Nutzung, auf die sich [`PLAN.md` §6.3](PLAN.md) stützt. In einem fremden Netz — Café, Büro, Wohnheim, Gäste-WLAN — gilt das nicht mehr; dort entweder
+
+```bash
+WH_RULES_TEXT_MODE=derived WH_BIND_HOST=0.0.0.0 uvicorn app.api.main:app --host 0.0.0.0
+```
+
+oder gar nicht freigeben. Ins offene Internet gehört die Instanz in keinem Fall.
 
 ### Regeldaten werden nicht eingecheckt
 

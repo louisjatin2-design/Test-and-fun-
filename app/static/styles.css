@@ -392,3 +392,47 @@ table.stats td.nm, table.stats th.nm { text-align: left; }
   }
   .catalog { max-height: 34vh; }
 }
+
+/* Auf dem Telefon ist Höhe die knappe Ressource. Ungebremst belegte die
+   Kopfzeile 222 von 844 Pixeln, bevor eine einzige Einheit zu sehen war —
+   ein Viertel des Bildschirms für drei Auswahlfelder. */
+@media (max-width: 600px) {
+  .topbar { padding: 6px 10px; gap: 8px 10px; }
+  .brand strong { font-size: 13px; }
+  .mode { font-size: 10px; padding: 1px 6px; }
+
+  .controls { flex: 1 1 100%; gap: 6px; order: 3; }
+  .controls label { flex: 1 1 0; min-width: 0; font-size: 10px; gap: 1px; }
+  .controls select { width: 100%; padding: 4px 6px; }
+
+  .budget { margin-left: auto; min-width: 0; flex: 1 1 120px; }
+  #budget-text { font-size: 11px; }
+  .actions { gap: 4px; }
+  .actions button { padding: 4px 8px; }
+
+  .catalog { max-height: 30vh; }
+  .inspector { height: 78vh; }
+
+  /* Die Attribution ist eine Auflage (§1.1) und bleibt sichtbar — aber
+     einzeilig statt als dreizeiliger Block. */
+  .attribution {
+    padding: 4px 10px;
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Fingerfreundliche Trefferflächen. */
+  .cat-item { padding: 8px 7px; }
+  .cat-item .add { opacity: 1; padding: 3px 10px; }
+  .entry-main { padding: 10px 9px; }
+  .inspector-head button { padding: 6px 10px; }
+}
+
+/* Als Web-App vom Home-Bildschirm gestartet gibt es keine Browserleiste;
+   der Platz unten gehört dann der Systemgeste. */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .attribution { padding-bottom: calc(4px + env(safe-area-inset-bottom)); }
+  .inspector { padding-bottom: env(safe-area-inset-bottom); }
+}
