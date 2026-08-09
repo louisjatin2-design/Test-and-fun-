@@ -4,6 +4,8 @@ Web-App für Warhammer 40.000: wertet Turnierergebnisse aus, rankt Fraktionen un
 
 Der Umsetzungsplan — Datenquellen, Datenmodell, Ranking-Methodik, Synergie-Erkennung, Generator, Listenbuilder, Stack, Roadmap und Risiken — steht in [`PLAN.md`](PLAN.md).
 
+Ausgelegt als **self-gehostetes Werkzeug für den privaten Gebrauch**, nicht als öffentliche Instanz.
+
 ## Status
 
 Planungsphase. Noch kein Code.

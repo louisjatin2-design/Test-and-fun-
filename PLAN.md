@@ -8,10 +8,12 @@ Stand der Recherche: 09.08.2026. Alle unten genannten Datenquellen wurden live g
 
 | Frage | Entscheidung |
 |---|---|
+| **Zielgruppe** | **Privates, self-gehostetes Werkzeug** für den eigenen Gebrauch — keine öffentliche Instanz. Diese Antwort entscheidet zugleich die Regeltext-Frage (§1.1, §6.3) und entschärft §1.4 teilweise. |
+| **Regeltexte** | **Volltext aus dem Wahapedia-Export**, lokal angezeigt (`RULES_TEXT_MODE=full` als Default, §6.3). `derived` bleibt als Schalter erhalten und ist zwingend umzulegen, falls je eine öffentlich erreichbare Instanz entsteht. |
 | Turnierdaten | Scraping-Weg prüfen und, soweit zulässig, nutzen — Details und Auflagen in §1.4. Manuell-Import wird trotzdem zuerst gebaut. |
 | Generator | Beides, **Assistent zuerst** (v1: bewerten/ergänzen), Vollautomatik in v2 auf demselben Constraint- und Synergie-Code. |
 | Stack | **Python/FastAPI + PostgreSQL + Next.js** (Begründung in §8). |
-| Listenbuilder | Interaktive Arbeitsfläche statt Formular; Klick auf eine Einheit öffnet ihre Regeln im Seitenpanel. Anzeigetiefe der Regeltexte über `RULES_TEXT_MODE`, Default `derived` (§6). |
+| Listenbuilder | Interaktive Arbeitsfläche statt Formular; Klick auf eine Einheit öffnet ihre vollständigen Regeln im Seitenpanel (§6). |
 | Repo | `main` als Default-Branch, Arbeit läuft über Pull Requests. |
 
 ---
@@ -54,7 +56,9 @@ Live geprüfte Dateien und ihre Spalten:
 
 **`Datasheets_leader.csv` ist der wichtigste einzelne Datensatz des ganzen Projekts.** Er liefert Synergie als *Fakt*, nicht als Statistik: welcher Charakter sich an welche Einheit anschließen darf, ist die Grundmenge, aus der 80 % aller echten „Combos" bestehen. Genauso `Datasheets.transport` (Transportkapazität als Freitext) und `Datasheets_enhancements`.
 
-Auflagen: Wahapedia bittet um Nennung („powered by Wahapedia"). Das ist einzuhalten. Die Regeltexte selbst sind GW-IP — im Produkt werden **abgeleitete Tags und Verlinkungen** gezeigt, keine vollständigen Regeltext-Kopien.
+Auflagen: Wahapedia bittet um Nennung („powered by Wahapedia"). Das ist einzuhalten — durchgängig, inklusive Deep-Link auf die jeweilige Quellseite.
+
+Zu den Regeltexten: Wahapedia formuliert sie eigenständig aus, sie sind keine Scans oder Copy-Paste aus den Büchern. **Das allein macht sie aber nicht frei** — der Regelinhalt bleibt GW-IP, und Wahapedia bewegt sich damit selbst in einer Grauzone. Entscheidend ist deshalb nicht die Herkunft der Formulierung, sondern der Nutzungsrahmen: Für die entschiedene **private, self-gehostete Instanz** werden die Texte lokal vollständig angezeigt (§6.3) — eine Kopie öffentlich angebotener Exportdaten für den eigenen Bedarf, die niemandem sonst ausgeliefert wird. Für eine öffentlich erreichbare Instanz gilt unverändert die engere Linie: nur abgeleitete Tags und Verlinkungen. Dafür existiert der Schalter in §6.3.
 
 ⚠️ **Validierungsaufgabe in Phase 0:** Der `wh40k11ed`-Export liefert HTTP 200, aber `Last_update` steht auf 2026-05-09 und die `link`-Spalten zeigen teils noch auf `/wh40k10ed/`-Pfade; die Dateigrößen von 10ed und 11ed sind fast identisch. Vor Projektstart muss stichprobenartig gegen die Website geprüft werden, ob der 11ed-Export inhaltlich schon vollständig auf 11. Edition steht. Falls nein: MFM/Dataslate-Quelle (unten) wird zur führenden Punktequelle, Wahapedia bleibt für Profile/Fähigkeiten.
 
@@ -98,6 +102,8 @@ Verbindliche Auflagen für den Scraper, sobald er läuft:
 - Rohdaten bleiben lokal; veröffentlicht werden **nur Aggregate**, keine Kopie fremder Datenbestände
 - Keine personenbezogenen Daten über den Spielernamen hinaus; Namen im öffentlichen UI pseudonymisierbar
 - Ein Schalter, der die Quelle in einer Minute abschaltet, wenn der Betreiber widerspricht
+
+Die Entscheidung für eine private, self-gehostete Instanz entschärft hier die *Weiterveröffentlichungs*-Frage — die Rohdaten bleiben ohnehin lokal und es gibt niemanden, an den etwas ausgeliefert würde. **Sie ersetzt die ToS-Prüfung aber nicht:** Ein Verbot automatisierten Zugriffs greift unabhängig davon, ob die geholten Daten je jemand anderes zu sehen bekommt. Die Prüfung bleibt damit erste Aufgabe in Phase 1.
 
 Parallel dazu — nicht statt dessen: **Manuell-Import ab Tag 1** und eine formlose Anfrage nach offiziellem Export-/API-Zugang bei BCP und TableTopTO. Ein „ja" ersetzt den ganzen Scraper und macht das Rechtsthema gegenstandslos.
 
@@ -303,24 +309,25 @@ Abschnitt 11 steht bewusst unten und optisch getrennt: **Regeln sind Fakten, Sta
 
 Die Abschnitte 6 bis 9 sind der eigentliche Gewinn gegenüber dem Nachschlagen auf einer Regelseite. Sie beantworten nicht „was kann diese Einheit", sondern „was kann diese Einheit **in dieser Liste**": Anschlussziele werden gegen den tatsächlichen Listeninhalt markiert („bereits enthalten"), Enhancements gegen das gewählte Detachment gefiltert, Stratagems gegen dessen Regeln.
 
-### 6.3 Anzeigetiefe der Regeltexte — zwei Modi
+### 6.3 Anzeigetiefe der Regeltexte — Volltext lokal, Schalter für den Ernstfall
 
-Hier kollidiert das gewünschte Verhalten mit einer Auflage aus §1.1: **im Produkt sollen keine vollständigen Regeltext-Kopien ausgeliefert werden**, weil die Texte GW-IP sind. Ein Inspektor, der nur Namen zeigt, ist dagegen nutzlos. Aufgelöst wird das über einen Schalter — nicht über einen Kompromiss, der beides halb macht:
+**Entschieden: Der Inspektor zeigt die Regeltexte vollständig**, direkt aus dem Wahapedia-Export. `RULES_TEXT_MODE=full` ist der Default. Alles andere verfehlt den Zweck — ein Panel, das bei einer Fähigkeit nur den Namen zeigt, spart genau den Blick nicht ein, für den es gebaut wurde, und die halbe Lösung („Kurzform plus Link") wäre in der Praxis dauernd ein Klick zu wenig.
 
-`RULES_TEXT_MODE = derived | full` (Deployment-Konfiguration, Default `derived`)
+Zur Begründung, weil sie im Plan sonst falsch abgelegt wäre: Wahapedia schreibt die Regeln eigenständig aus, aber **daraus folgt keine Freigabe** — der Inhalt bleibt GW-IP, und Wahapedia selbst steht damit in einer Grauzone. Was den Fall trägt, ist der Nutzungsrahmen: eine **self-gehostete Instanz für den privaten Gebrauch** verbreitet nichts. Sie hält öffentlich angebotene Exportdaten lokal vor und zeigt sie einer Person — derjenigen, die sie betreibt. Das ist eine andere Lage als eine öffentliche Web-App, die dieselben Texte an Dritte ausliefert. Genau diese Unterscheidung war schon vorher die entscheidende Achse des Plans; sie ist jetzt beantwortet statt offen.
 
-| | `derived` — Default, für jede öffentliche Instanz | `full` — nur self-hosted |
+Der Schalter bleibt deshalb erhalten, nur mit umgekehrtem Default:
+
+| | `full` — **Default**, private self-gehostete Instanz | `derived` — Pflicht, sobald öffentlich erreichbar |
 |---|---|---|
-| Profil- und Waffenwerte | ja; ohne diese Zahlen ist ein Builder wertlos | ja |
-| Fähigkeiten | Name + **generierte Kurzform aus den Effekt-Tags** (§4.1), z. B. „Reroll Hits (Aura 6″)", „Lethal Hits", „+1 to Wound vs. CHAOS" | Volltext aus der lokalen DB |
-| Stratagems / Enhancements | Name, CP- bzw. Punktkosten, Phase, Timing-Tag | Volltext |
-| immer | Deep-Link auf die Wahapedia-Seite samt Anker, Attributionszeile | dito |
+| Profil- und Waffenwerte | ja | ja; ohne diese Zahlen ist ein Builder wertlos |
+| Fähigkeiten | **Volltext** aus der lokalen DB | Name + generierte Kurzform aus den Effekt-Tags (§4.1), z. B. „Reroll Hits (Aura 6″)", „Lethal Hits", „+1 to Wound vs. CHAOS" |
+| Stratagems / Enhancements | **Volltext**, mit CP- bzw. Punktkosten, Phase, Timing | Name, Kosten, Phase, Timing-Tag |
+| in beiden Modi | Attributionszeile „powered by Wahapedia" sichtbar im Panel, Deep-Link auf die Quellseite samt Anker, `Source`- und Errata-Stand in der Fußzeile | dito |
 
-Der `derived`-Modus kostet **keine zusätzliche Arbeit**: Die Effekt-Tags werden für die Synergie-Erkennung in §4.1 ohnehin extrahiert und liegen als geprüfte Repo-Datei vor — der Inspektor rendert nur, was es bereits gibt. Umgekehrt gilt: Wo die Extraktion für eine Fähigkeit nichts hergibt, zeigt der Inspektor ehrlich „nur auf Wahapedia" mit Link statt einer erfundenen Zusammenfassung.
+Zwei Dinge, die daran hängen:
 
-Eine Abhängigkeit in der Reihenfolge ist dabei zu benennen: Die Effekt-Tags entstehen erst in Phase 5, der Builder aber schon in Phase 4b (§9). Bis dahin zeigt `derived` bei Fähigkeiten nur Name und Deep-Link. Das ist hinnehmbar, weil der Default-Zielfall self-hosted ist (§11.1) und dort `full` ab Tag eins verfügbar ist — eine öffentliche Instanz sollte vor Phase 5 ohnehin nicht online gehen.
-
-`full` ist an den self-hosted-Fall aus §11.1 gebunden und beim ersten Start ausdrücklich zu bestätigen. **Ob `full` je für eine öffentliche Instanz freigegeben wird, ist keine technische, sondern eine rechtliche Entscheidung** — sie steht in §11.1 offen. Der Schalter existiert, damit sie nachträglich ohne Umbau umsetzbar ist. Auch `derived` liefert mit den Profilwerten GW-Daten aus; das ist die in §1.1 bereits akzeptierte Linie (abgeleitete Daten plus Verlinkung), nicht mehr.
+- **Der `derived`-Pfad verkümmert nicht zur toten Konfiguration.** Die Effekt-Tags entstehen für die Synergie-Erkennung (§4.1) ohnehin, und der Inspektor rendert sie im Meta-Abschnitt auch im `full`-Modus. Der Modus schaltet nur, ob daneben der Volltext steht. Damit ist `derived` jederzeit funktionsfähig, ohne dass er eigens gepflegt werden müsste.
+- **Das Umlegen auf `derived` ist Bestandteil einer Veröffentlichung, nicht eine Aufgabe danach.** Sollte je eine öffentlich erreichbare Instanz entstehen, steht der Moduswechsel als Punkt in der Release-Checkliste von Phase 7 (§9) — zusammen mit Zugriffsschutz und Pseudonymisierung. Ein Default, der beim Deployment stillschweigend mitwandert, wäre die wahrscheinlichste Art, diese Entscheidung versehentlich zu kippen.
 
 ### 6.4 Datenweg: warum der Inspektor sofort aufgehen muss
 
@@ -359,7 +366,9 @@ Das Validierungsergebnis ist **abgeleiteter Zustand und wird nie gespeichert.** 
 
 ### 6.6 Nicht-Ziele
 
-Kein Spielsimulator und kein Würfelrechner in v1 — erwartete Schadenswerte kommen ausschließlich aus dem Rollenprofil (§5.2) und sind als Näherung gekennzeichnet. Kein Wahapedia-Klon: Der Inspektor zeigt, was zum Listenbau nötig ist, und verlinkt für alles Weitere. Keine Regel-Engine, die Spielzüge auflöst.
+Kein Spielsimulator und kein Würfelrechner in v1 — erwartete Schadenswerte kommen ausschließlich aus dem Rollenprofil (§5.2) und sind als Näherung gekennzeichnet. Keine Regel-Engine, die Spielzüge auflöst.
+
+Auch kein Wahapedia-Klon — trotz Volltextanzeige (§6.3). Der Inspektor deckt ab, was am konkreten Datasheet hängt: Profile, Waffen, Fähigkeiten, Anschluss, Enhancements, Stratagems. Kernregeln, Missionen, Turnierpakete und alles Übrige bleiben verlinkt statt gespiegelt. Die Grenze verläuft an der Einheit, nicht am Regelwerk.
 
 ### 6.7 Abnahmekriterien
 
@@ -427,10 +436,10 @@ POST /api/lists/validate/incremental                { list, patch }
 | **2** | Listen-Parser + Einheiten-Statistik, Match-Rate-Dashboard | Einheiten-Ebene wird auswertbar | ~2 Wochen |
 | **3** | Skill-bereinigtes Modell (Bradley-Terry + Fraktionseffekt), Matchup-Matrix | Der eigentliche statistische Mehrwert | ~1,5 Wochen |
 | **4** | Constraint-Validator als eigener Service + Listen-Import/-Prüfung | „Ist meine Liste legal?" — eigenständig nützlich | ~1 Woche |
-| **4b** | **Listenbuilder-Grundgerüst + Regel-Inspektor (§6.1–6.5):** `datasheet_card`-Read-Model, Panel mit Klick auf Einheit, Live-Validierung, legalitätsgefilterte Zuweisungen, Undo/Redo, Export | Regeln nachschlagbar und Listen baubar — **ohne eine einzige Turnierzeile** | ~2 Wochen |
-| **5** | Synergie-Engine: Regel-Extraktion + empirisches Mining | Synergie-Explorer im UI; liefert zugleich die Effekt-Tags für `RULES_TEXT_MODE=derived` (§6.3) | ~2,5 Wochen |
+| **4b** | **Listenbuilder-Grundgerüst + Regel-Inspektor (§6.1–6.5):** `datasheet_card`-Read-Model, Panel mit Klick auf Einheit, Regelvolltext, Live-Validierung, legalitätsgefilterte Zuweisungen, Undo/Redo, Export | Regeln vollständig nachschlagbar und Listen baubar — **ohne eine einzige Turnierzeile** | ~2 Wochen |
+| **5** | Synergie-Engine: Regel-Extraktion + empirisches Mining | Synergie-Explorer im UI; liefert zugleich die Effekt-Tags, die `RULES_TEXT_MODE=derived` tragen (§6.3) | ~2,5 Wochen |
 | **6** | **Generator v1 (Assistent), im Builder:** Rollenprofil, Lücken, Synergie-Hinweise, Restpunkte füllen, Vorschläge als übernehmbarer Patch | Der entschiedene v1-Funktionsumfang | ~2 Wochen |
-| **7** | UI-Politur, Teilen/Export, Performance, Zugriffsschutz | **v1 ausgeliefert** | ~2 Wochen |
+| **7** | UI-Politur, Teilen/Export, Performance. **Release-Checkliste für den Fall einer öffentlich erreichbaren Instanz:** `RULES_TEXT_MODE=derived`, Zugriffsschutz, Pseudonymisierung der Spielernamen | **v1 ausgeliefert** | ~2 Wochen |
 | **8** | **Generator v2 (Vollautomatik):** Archetyp-Clustering, CP-SAT, Local Search, Diversifizierung | Listen aus dem Nichts | ~2,5 Wochen |
 
 \* Aufwand für eine Person, nebenbei; die Zahlen sind Größenordnungen, keine Zusagen.
@@ -448,8 +457,8 @@ Aus demselben Grund sitzt der Listenbuilder als Phase 4b direkt dahinter und nic
 | Risiko | Behandlung |
 |---|---|
 | **Turnierdaten-Zugang bricht weg** (ToS-Klausel, API-Änderung, Sperre) | `SourceAdapter`-Abstraktion; Manuell-Import von Tag 1; ToS-Prüfung als erste Aufgabe in Phase 1; Abschalter pro Quelle; parallel offizielle Anfrage |
-| **GW-IP / Regeltexte** | Keine Volltext-Regeln ausliefern, nur abgeleitete Tags + Deep-Links; Wahapedia-Attribution |
-| **Regel-Inspektor zeigt zu viel Regeltext** | `RULES_TEXT_MODE` mit Default `derived`: Werte + generierte Effekt-Tags + Deep-Link statt Volltext; `full` nur self-hosted und bestätigungspflichtig (§6.3) |
+| **GW-IP / Regeltexte** | Nutzung bleibt privat und self-gehostet — es wird nichts an Dritte ausgeliefert; Volltext existiert nur lokal (§6.3). Wahapedia-Attribution und Deep-Links durchgängig. Restrisiko wird bewusst getragen und ist an den privaten Rahmen gebunden |
+| **Aus der privaten wird unbemerkt eine öffentliche Instanz** | Genau der Fall, in dem die Begründung aus §6.3 wegfällt. Gegenmittel: `RULES_TEXT_MODE=derived` als fester Punkt der Release-Checkliste in Phase 7 (§9), nicht als nachgelagerte Aufgabe; `derived` bleibt durch die Effekt-Tags aus §4.1 dauerhaft funktionsfähig |
 | **Inspektor ist träge und wird deshalb nicht benutzt** | Denormalisiertes `datasheet_card`-Read-Model, Prefetch pro Fraktion, Kontextteile asynchron nachgeladen; 100-ms-Budget als CI-Test (§6.4, §6.7) |
 | **Builder bietet an, was der Validator ablehnt** | Eine gemeinsame Regelquelle und derselbe Reducer für Builder und Generator; Property-Test als Abnahmekriterium (§6.7) |
 | **Lückenhafte Wahapedia-Daten erzeugen leere Panel-Abschnitte** | Contract-Test über alle Datasheets vor Release; fehlende Daten als expliziter Zustand statt als leere Fläche (§6.7) |
@@ -463,11 +472,12 @@ Aus demselben Grund sitzt der Listenbuilder als Phase 4b direkt dahinter und nic
 
 ## 11. Noch offen
 
-Nichts davon blockiert Phase 0 — aber Punkt 1 und 2 sollten vor Phase 1 geklärt sein, weil sie nachträglich teuer werden.
+Nichts davon blockiert Phase 0 — aber Punkt 1 sollte vor Phase 1 geklärt sein, weil er nachträglich teuer wird.
 
-1. **Zielgruppe:** Privates Werkzeug (self-hosted, kein Auth, Rechtsfragen weitgehend entschärft) oder öffentliche Web-App? Das ist bei der gewählten Scraping-Strategie der Unterschied zwischen „private Auswertung" und „Weiterveröffentlichung fremder Daten" — juristisch zwei verschiedene Dinge. Bis zur Klärung wird auf self-hosted hin gebaut; das ist die jederzeit erweiterbare Richtung. **An derselben Antwort hängt `RULES_TEXT_MODE` (§6.3):** self-hosted erlaubt `full` und damit den vollwertigen Regel-Inspektor, eine öffentliche Instanz läuft auf `derived`. Der Schalter hält beide Wege offen, die Entscheidung selbst nimmt er niemandem ab.
-2. **Umfang:** Nur 40k, oder soll die Architektur Age of Sigmar gleich mittragen? Wahapedia exportiert beides. Ein `game_system`-Feld in Phase 0 mitzuziehen kostet fast nichts, es nachträglich einzuführen ist eine Schema-Migration durch alle Tabellen. **Default: Feld einbauen, nur 40k befüllen.**
-3. **Format-Fokus:** 2000 Pkt. GT/WTC als Standard gesetzt — sollen 1000 Pkt. und Combat Patrol als eigene Auswertungsfenster mitlaufen? (Das Datenmodell trägt es über `tournament.format` bereits.)
+Die früher hier stehende Frage nach der **Zielgruppe** ist entschieden: privates, self-gehostetes Werkzeug (siehe Entscheidungstabelle oben). Damit sind zugleich `RULES_TEXT_MODE=full` (§6.3) und die Einordnung „private Auswertung" statt „Weiterveröffentlichung fremder Daten" in §1.4 festgelegt. Eine spätere Öffnung bleibt möglich, ist dann aber ein bewusster Schritt mit eigener Checkliste (Phase 7, §9) — keine stillschweigende Erweiterung.
+
+1. **Umfang:** Nur 40k, oder soll die Architektur Age of Sigmar gleich mittragen? Wahapedia exportiert beides. Ein `game_system`-Feld in Phase 0 mitzuziehen kostet fast nichts, es nachträglich einzuführen ist eine Schema-Migration durch alle Tabellen. **Default: Feld einbauen, nur 40k befüllen.**
+2. **Format-Fokus:** 2000 Pkt. GT/WTC als Standard gesetzt — sollen 1000 Pkt. und Combat Patrol als eigene Auswertungsfenster mitlaufen? (Das Datenmodell trägt es über `tournament.format` bereits.)
 
 ---
 
