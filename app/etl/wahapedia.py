@@ -43,9 +43,13 @@ FILES: list[tuple[str, type]] = [
     ("Stratagems", models.Stratagem),
 ]
 
+#: HTTP-Header müssen ASCII sein. Ein Umlaut hier lässt httpx mit
+#: "'ascii' codec can't encode character" scheitern — und zwar bei *jedem*
+#: Abruf, also lautlos den ganzen Netzpfad. Deshalb bewusst ohne Umlaute,
+#: abgesichert durch einen Test.
 USER_AGENT = (
-    "warhammer-meta/0.1 (privates, self-gehostetes Werkzeug; "
-    "Kontakt über das GitHub-Repository)"
+    "warhammer-meta/0.1 (private self-hosted tool; "
+    "contact via the GitHub repository)"
 )
 
 

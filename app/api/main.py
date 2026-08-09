@@ -12,15 +12,16 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app import config, db, derive, models
+from app import config, db, derive, live, models
 from app.rules import ruleset
 from app.rules.builderlist import ActionError, BuilderList, apply_all
 from app.rules.validator import RulesContext, validate
@@ -30,7 +31,59 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     _warn_on_public_exposure()
-    yield
+
+    from app.etl.updates import load_current_state
+
+    load_current_state()
+
+    task = None
+    if config.UPDATE_INTERVAL_HOURS > 0:
+        task = asyncio.create_task(_update_loop())
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+
+async def _update_loop() -> None:
+    """Prüft in festem Abstand, ob es einen neueren Regelstand gibt.
+
+    Der Ingest ist blockierend und dauert rund 30 Sekunden — er läuft
+    deshalb in einem Worker-Thread, damit die Event-Loop frei bleibt und
+    das UI währenddessen bedienbar ist.
+    """
+    from app.etl.updates import refresh
+    from app.etl.wahapedia import HttpSource
+
+    await asyncio.sleep(config.UPDATE_INITIAL_DELAY_SECONDS)
+    while True:
+        try:
+            source = HttpSource(cache_dir=None)
+            if config.UPDATE_AUTO_APPLY:
+                result = await asyncio.to_thread(refresh, source)
+                if result.applied:
+                    print(
+                        f"  ↻ Neuer Regelstand {result.current} geladen "
+                        f"({result.cards} Karten)"
+                    )
+            else:
+                with db.session() as session:
+                    await asyncio.to_thread(_check_only, source, session)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - eine Prüfung darf nie killen
+            live.mark_checked("", error=str(exc))
+
+        await asyncio.sleep(config.UPDATE_INTERVAL_HOURS * 3600)
+
+
+def _check_only(source, session):
+    from app.etl.updates import check
+
+    return check(source, session)
 
 
 app = FastAPI(
@@ -43,18 +96,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-_context_cache: dict[str, RulesContext] = {}
+_context_cache: dict[tuple[str, int], RulesContext] = {}
 
 
 def _context(session, version: str) -> RulesContext:
     """Regelkontext je Regelstand einmal aufbauen und halten.
 
-    Zulässig, weil sich die Regeldaten nur beim ETL-Lauf ändern und die
-    Instanz einen einzelnen Nutzer bedient.
+    Der Schlüssel enthält den **Datenstand** aus :mod:`app.live`. Ohne ihn
+    würde ein Update zur Laufzeit nie ankommen: Der Prozess bediente
+    weiterhin die Karten, die beim ersten Request geladen wurden.
     """
-    if version not in _context_cache:
-        _context_cache[version] = RulesContext(session, version)
-    return _context_cache[version]
+    from app.etl.updates import sync_from_db
+
+    # Gleicht zuerst mit der DB ab — so wird auch ein Ingest bemerkt, der
+    # außerhalb dieses Prozesses lief (CLI, Cron).
+    key = (version, sync_from_db(session))
+    if key not in _context_cache:
+        # Alte Stände wegwerfen, statt sie mitzuschleppen.
+        _context_cache.clear()
+        _context_cache[key] = RulesContext(session, version)
+    return _context_cache[key]
 
 
 def invalidate_context_cache() -> None:
@@ -93,6 +154,8 @@ def get_meta() -> dict:
     return {
         "ruleset_version": config.RULESET_VERSION,
         "rules_text_mode": config.text_mode(),
+        "data_version": live.data_version(),
+        "update_interval_hours": config.UPDATE_INTERVAL_HOURS,
         "last_update": meta.get("last_update", ""),
         "ingested_at": meta.get("ingested_at", ""),
         "has_data": cards is not None,
@@ -333,6 +396,102 @@ def datasheet_context(datasheet_id: str) -> dict:
         "inclusion_rate": None,
         "synergies": [],
     }
+
+
+# ---------------------------------------------------------------------------
+# Live-Updates
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/updates/status")
+def update_status() -> dict:
+    return live.snapshot()
+
+
+@app.post("/api/updates/check")
+async def update_check(apply: bool = Query(default=True)) -> dict:
+    """Prüft von Hand auf einen neueren Regelstand.
+
+    Das Warten auf die Quelle blockiert die Event-Loop nicht — sonst stünde
+    das UI während eines Ingests von rund 30 Sekunden.
+    """
+    from app.etl.updates import check, refresh
+    from app.etl.wahapedia import HttpSource
+
+    source = HttpSource(cache_dir=None)
+    if apply:
+        result = await asyncio.to_thread(refresh, source)
+        return {
+            "applied": result.applied,
+            "reason": result.reason,
+            "cards": result.cards,
+            **live.snapshot(),
+        }
+
+    with db.session() as session:
+        outcome = await asyncio.to_thread(check, source, session)
+    return {"applied": False, "changed": outcome.changed, **live.snapshot()}
+
+
+def sync_data_version() -> int:
+    """Fragt die Datenbank, welcher Regelstand geladen ist.
+
+    Ein Primärschlüssel-Lookup auf einer Tabelle mit drei Zeilen. Billig
+    genug, um ihn regelmäßig zu machen, und die einzige Stelle, an der ein
+    Ingest aus einem *anderen* Prozess überhaupt auffallen kann.
+    """
+    from app.etl.updates import sync_from_db
+
+    try:
+        with db.session() as session:
+            return sync_from_db(session)
+    except Exception:  # noqa: BLE001 - eine kaputte DB killt den Stream nicht
+        return live.data_version()
+
+
+async def event_stream(is_disconnected, tick: float = 1.0, sync=sync_data_version):
+    """Server-Sent Events: meldet offenen Browsern einen neuen Regelstand.
+
+    Der Stream beobachtet den Datenstand-Zähler aus :mod:`app.live`, statt
+    sich in den Ingest einzuklinken. Das kommt ohne Kopplung zwischen
+    Worker-Thread und Event-Loop aus und verpasst nichts: Der Zähler steigt
+    monoton, ein Client mit kleinerem Wert ist schlicht veraltet.
+
+    ``is_disconnected`` wird bei jeder Runde gefragt. Ohne diese Abfrage
+    liefe der Stream ewig weiter, auch wenn der Browser längst zu ist — bei
+    jedem Reload ein zusätzlicher Task, der nie endet.
+    """
+    seen = sync()
+    yield _sse("hello", live.snapshot())
+
+    heartbeat = 0
+    while not await is_disconnected():
+        await asyncio.sleep(tick)
+        # Bewusst hier und nicht nur im Anfrage-Pfad: Ohne eigene Abfrage
+        # bliebe ein Ingest aus einem anderen Prozess unbemerkt, solange
+        # niemand klickt — also genau dann, wenn die Meldung nötig wäre.
+        current = sync()
+        if current != seen:
+            seen = current
+            yield _sse("ruleset-changed", live.snapshot())
+        heartbeat += 1
+        if heartbeat >= 25:
+            # Kommentarzeile hält Proxies und Browser bei Laune.
+            heartbeat = 0
+            yield ": ping\n\n"
+
+
+@app.get("/api/events")
+async def events(request: Request) -> StreamingResponse:
+    return StreamingResponse(
+        event_stream(request.is_disconnected),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
 # ---------------------------------------------------------------------------

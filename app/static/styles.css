@@ -89,6 +89,22 @@ button:disabled { opacity: .4; cursor: default; }
 
 .actions { display: flex; gap: 6px; }
 
+/* ---------------------------------------------------------------- Banner */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #2b2412;
+  border-bottom: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 13px;
+}
+.banner[hidden] { display: none; }
+.banner span { flex: 1; }
+.banner button { background: transparent; border-color: var(--accent); color: var(--accent); }
+.banner.busy { opacity: .7; pointer-events: none; }
+
 /* ------------------------------------------------------------------ Grid */
 main {
   flex: 1;

@@ -27,6 +27,7 @@ const state = {
   inspected: null,       // datasheet_id im Panel
   pinned: false,
   queue: Promise.resolve(),
+  dataVersion: 0,        // Regelstand, auf dem die geladenen Karten beruhen
 };
 
 const $ = (id) => document.getElementById(id);
@@ -186,8 +187,11 @@ async function init() {
     $("detachment").value = state.list.detachment_id;
   }
 
+  state.dataVersion = state.meta.data_version ?? 0;
+
   await revalidate();
   wireEvents();
+  connectLiveUpdates();
   render();
 }
 
@@ -228,6 +232,13 @@ function wireEvents() {
   $("undo").addEventListener("click", undo);
   $("redo").addEventListener("click", redo);
   $("export").addEventListener("click", exportList);
+
+  $("update-apply").addEventListener("click", applyUpdate);
+  $("update-dismiss").addEventListener("click", () => {
+    // Nur wegklicken; beim nächsten Regelstand meldet sich der Server wieder.
+    $("update-banner").hidden = true;
+    state.dataVersion = Number($("update-banner").dataset.version || 0);
+  });
 
   $("insp-close").addEventListener("click", closeInspector);
   $("insp-pin").addEventListener("click", () => {
@@ -851,6 +862,63 @@ function exportList() {
   const text = lines.join("\n");
   navigator.clipboard?.writeText(text).catch(() => {});
   alert(`${text}\n\n(in die Zwischenablage kopiert)`);
+}
+
+// ------------------------------------------------------------ Live-Updates
+// Der Server meldet einen neuen Regelstand über Server-Sent Events. Die
+// Liste wird dabei *nicht* angefasst: Sie gehört dem Nutzer. Es werden nur
+// die Karten neu geladen und neu validiert — Punkte ändern sich mit jedem
+// MFM-Stand, eine Liste kann durch ein Update illegal werden.
+
+function connectLiveUpdates() {
+  if (typeof EventSource === "undefined") return;
+  const source = new EventSource("/api/events");
+
+  source.addEventListener("hello", (event) => {
+    state.dataVersion = JSON.parse(event.data).data_version;
+  });
+
+  source.addEventListener("ruleset-changed", (event) => {
+    const info = JSON.parse(event.data);
+    if (info.data_version === state.dataVersion) return;
+    showUpdateBanner(info);
+  });
+
+  // Kein eigener Reconnect nötig: EventSource versucht es von selbst
+  // wieder. Ein Fehler heißt hier "Server weg", nicht "kaputt".
+  source.onerror = () => {};
+}
+
+function showUpdateBanner(info) {
+  const banner = $("update-banner");
+  const stand = info.last_update || "unbekannt";
+  $("update-text").textContent =
+    `Neuer Regelstand verfügbar (${stand}). Übernehmen lädt die Regeln neu ` +
+    "und prüft deine Liste erneut — die Liste selbst bleibt erhalten.";
+  banner.hidden = false;
+  banner.dataset.version = info.data_version;
+}
+
+async function applyUpdate() {
+  const banner = $("update-banner");
+  banner.classList.add("busy");
+  $("update-text").textContent = "Regeln werden neu geladen …";
+  try {
+    state.meta = await api("/api/meta");
+    state.dataVersion = state.meta.data_version;
+    if (state.list.faction_id) {
+      await loadFactionCards(state.list.faction_id);
+      await loadDetachments(state.list.faction_id);
+      $("detachment").value = state.list.detachment_id;
+    }
+    await revalidate();
+    render();
+    banner.hidden = true;
+  } catch (error) {
+    $("update-text").textContent = `Aktualisieren fehlgeschlagen: ${error.message}`;
+  } finally {
+    banner.classList.remove("busy");
+  }
 }
 
 function escapeHtml(value) {

@@ -39,6 +39,25 @@ VALID_TEXT_MODES = ("full", "derived")
 #: nicht mehr. Siehe :func:`check_public_exposure`.
 LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
+# --------------------------------------------------------------------------
+# Live-Updates
+# --------------------------------------------------------------------------
+#: Abstand zwischen zwei Update-Prüfungen in Stunden. ``0`` schaltet die
+#: automatische Prüfung ab; von Hand geht sie dann weiter über
+#: ``POST /api/updates/check``.
+UPDATE_INTERVAL_HOURS = float(os.environ.get("WH_UPDATE_INTERVAL_HOURS", "24"))
+
+#: Verzögerung der ersten Prüfung nach dem Start. Ein self-gehostetes
+#: Werkzeug läuft nicht wochenlang durch — ohne frühe erste Prüfung würde
+#: ein 24-Stunden-Intervall praktisch nie feuern. Der Start darf davon aber
+#: nicht ausgebremst werden, deshalb passiert das nebenläufig.
+UPDATE_INITIAL_DELAY_SECONDS = float(
+    os.environ.get("WH_UPDATE_INITIAL_DELAY_SECONDS", "20")
+)
+
+#: Gefundene Updates automatisch übernehmen. Aus heißt: nur melden.
+UPDATE_AUTO_APPLY = os.environ.get("WH_UPDATE_AUTO_APPLY", "1") not in ("0", "false")
+
 
 @dataclass(frozen=True)
 class Attribution:

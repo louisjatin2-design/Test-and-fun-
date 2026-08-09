@@ -239,6 +239,8 @@ def session(tmp_path, csv_dir, monkeypatch):
     """Frische DB mit geladenen Testdaten."""
     monkeypatch.setenv("WH_DATABASE_URL", f"sqlite:///{tmp_path / 'test.sqlite3'}")
     monkeypatch.setenv("WH_RULES_TEXT_MODE", "full")
+    # Kein Hintergrund-Updater in Tests: Er würde ins Netz greifen.
+    monkeypatch.setenv("WH_UPDATE_INTERVAL_HOURS", "0")
 
     import importlib
 
@@ -268,11 +270,13 @@ def client(session, monkeypatch):
     from app.api import main
 
     main.invalidate_context_cache()
-    return TestClient(main.app)
+    with TestClient(main.app) as test_client:
+        yield test_client
 
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
-    for key in ("WH_RULES_TEXT_MODE", "WH_DATABASE_URL"):
+    for key in ("WH_RULES_TEXT_MODE", "WH_DATABASE_URL",
+                "WH_UPDATE_INTERVAL_HOURS"):
         monkeypatch.delenv(key, raising=False)
     os.environ.setdefault("WH_RULESET_VERSION", "wh40k11ed")
