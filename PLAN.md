@@ -380,6 +380,24 @@ Testbar formuliert, weil „fühlt sich gut an" kein Kriterium ist:
 4. **Round-Trip.** Builder-Export → eigener Parser (§7) → identische `BuilderList`, fehlerfrei für 100 % der Beispiel-Listen.
 5. **Bedienbarkeit.** Panel per Tastatur erreichbar und mit `Esc` schließbar, Fokus wird gefangen und beim Schließen zurückgegeben, Katalog mit Pfeiltasten navigierbar, keine Information allein über Farbe kodiert.
 
+### 6.8 Live-Updates des Regelstands
+
+Der Regelstand ändert sich im Betrieb — Wahapedia veröffentlicht Dataslates und Errata, und Phase 0 (§9) sieht eine „per Cron aktuelle" Regel-DB vor. Ein Builder, der dann weiter mit den Punkten von gestern rechnet, ist schlimmer als einer ohne Update: Er behauptet Legalität, die nicht mehr gilt.
+
+Erkannt wird das über `Last_update.csv` — eine Datei mit einer einzigen Zeitangabe, rund 30 Bytes. Sie zu prüfen kostet nichts, der vollständige Export dagegen rund 30 Sekunden; geladen wird deshalb nur bei tatsächlicher Änderung.
+
+Drei Dinge müssen dann nachziehen, und jedes ist eine eigene Fehlerquelle:
+
+| | |
+|---|---|
+| **Die Caches im Serverprozess** | Der Regelkontext wird zwischen Anfragen gehalten. Sein Schlüssel trägt deshalb den Datenstand — sonst bedient der Prozess auf unbestimmte Zeit die Karten, die er beim ersten Request geladen hat. |
+| **Offene Browser** | Bekommen den neuen Stand über Server-Sent Events als Banner gemeldet. Übernehmen lädt die Karten neu und validiert erneut; **die Liste selbst wird nie angefasst** — sie gehört dem Nutzer. |
+| **Die Validierung offener Listen** | Punkte wandern mit jedem MFM-Stand. Eine Liste kann durch ein Update illegal werden, und genau das muss sichtbar werden statt still zu bleiben. |
+
+**Maßgeblich ist die Datenbank, nicht der Prozesszustand.** Der Ingest-Zeitstempel in `meta` entscheidet, welcher Regelstand geladen ist. Damit wird auch ein ETL-Lauf von der Kommandozeile bemerkt, ohne dass der Server neu starten muss — und der SSE-Stream muss diesen Stempel selbst abfragen, nicht nur einen prozessinternen Zähler beobachten: Sonst bliebe ein externer Lauf unbemerkt, solange niemand klickt, also genau dann, wenn die Meldung nötig wäre.
+
+Ingest und Kartenbau laufen in **einer** Transaktion. Sonst sähen parallele Leser einen Zwischenstand mit neuen Silver-Tabellen und alten Karten — Regeln aus zwei Ständen gemischt.
+
 ---
 
 ## 7. Das größte technische Risiko: Listen-Parsing
@@ -436,7 +454,7 @@ POST /api/lists/validate/incremental                { list, patch }
 | **2** | Listen-Parser + Einheiten-Statistik, Match-Rate-Dashboard | Einheiten-Ebene wird auswertbar | ~2 Wochen |
 | **3** | Skill-bereinigtes Modell (Bradley-Terry + Fraktionseffekt), Matchup-Matrix | Der eigentliche statistische Mehrwert | ~1,5 Wochen |
 | **4** | Constraint-Validator als eigener Service + Listen-Import/-Prüfung | „Ist meine Liste legal?" — eigenständig nützlich | ~1 Woche |
-| **4b** | **Listenbuilder-Grundgerüst + Regel-Inspektor (§6.1–6.5):** `datasheet_card`-Read-Model, Panel mit Klick auf Einheit, Regelvolltext, Live-Validierung, legalitätsgefilterte Zuweisungen, Undo/Redo, Export | Regeln vollständig nachschlagbar und Listen baubar — **ohne eine einzige Turnierzeile** | ~2 Wochen |
+| **4b** | **Listenbuilder-Grundgerüst + Regel-Inspektor (§6.1–6.5):** `datasheet_card`-Read-Model, Panel mit Klick auf Einheit, Regelvolltext, Live-Validierung, legalitätsgefilterte Zuweisungen, Undo/Redo, Export, Live-Update der Regeldaten (§6.8) | Regeln vollständig nachschlagbar und Listen baubar — **ohne eine einzige Turnierzeile** | ~2 Wochen |
 | **5** | Synergie-Engine: Regel-Extraktion + empirisches Mining | Synergie-Explorer im UI; liefert zugleich die Effekt-Tags, die `RULES_TEXT_MODE=derived` tragen (§6.3) | ~2,5 Wochen |
 | **6** | **Generator v1 (Assistent), im Builder:** Rollenprofil, Lücken, Synergie-Hinweise, Restpunkte füllen, Vorschläge als übernehmbarer Patch | Der entschiedene v1-Funktionsumfang | ~2 Wochen |
 | **7** | UI-Politur, Teilen/Export, Performance. **Release-Checkliste für den Fall einer öffentlich erreichbaren Instanz:** `RULES_TEXT_MODE=derived`, Zugriffsschutz, Pseudonymisierung der Spielernamen | **v1 ausgeliefert** | ~2 Wochen |
@@ -458,6 +476,7 @@ Aus demselben Grund sitzt der Listenbuilder als Phase 4b direkt dahinter und nic
 |---|---|
 | **Turnierdaten-Zugang bricht weg** (ToS-Klausel, API-Änderung, Sperre) | `SourceAdapter`-Abstraktion; Manuell-Import von Tag 1; ToS-Prüfung als erste Aufgabe in Phase 1; Abschalter pro Quelle; parallel offizielle Anfrage |
 | **GW-IP / Regeltexte** | Nutzung bleibt privat und self-gehostet — es wird nichts an Dritte ausgeliefert; Volltext existiert nur lokal (§6.3). Wahapedia-Attribution und Deep-Links durchgängig. Restrisiko wird bewusst getragen und ist an den privaten Rahmen gebunden |
+| **Regelstand veraltet still im laufenden Betrieb** | Prüfung über `Last_update.csv`, Cache-Schlüssel am Datenstand, SSE-Meldung an offene Browser, Neuvalidierung offener Listen (§6.8). Maßgeblich ist der Ingest-Stempel in der DB, nicht der Prozesszustand |
 | **Aus der privaten wird unbemerkt eine öffentliche Instanz** | Genau der Fall, in dem die Begründung aus §6.3 wegfällt. Gegenmittel: `RULES_TEXT_MODE=derived` als fester Punkt der Release-Checkliste in Phase 7 (§9), nicht als nachgelagerte Aufgabe; `derived` bleibt durch die Effekt-Tags aus §4.1 dauerhaft funktionsfähig |
 | **Inspektor ist träge und wird deshalb nicht benutzt** | Denormalisiertes `datasheet_card`-Read-Model, Prefetch pro Fraktion, Kontextteile asynchron nachgeladen; 100-ms-Budget als CI-Test (§6.4, §6.7) |
 | **Builder bietet an, was der Validator ablehnt** | Eine gemeinsame Regelquelle und derselbe Reducer für Builder und Generator; Property-Test als Abnahmekriterium (§6.7) |
