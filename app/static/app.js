@@ -30,7 +30,102 @@ const state = {
   dataVersion: 0,        // Regelstand, auf dem die geladenen Karten beruhen
 };
 
+/** Wird nach der Backend-Definition gesetzt (siehe unten). */
+let backend;
+
 const $ = (id) => document.getElementById(id);
+
+// ------------------------------------------------------------------ Backend
+// Zwei Betriebsarten hinter einer Schnittstelle:
+//
+//   Server   — FastAPI beantwortet alles, der Reducer läuft dort (§6.5).
+//   Offline  — eine einzelne HTML-Datei mit eingebetteten Daten, die auf
+//              einem Telefon ohne Python und ohne Netz läuft. Reducer und
+//              Validator kommen aus rules.js; der Parity-Test hält beide
+//              Engines deckungsgleich.
+//
+// Der Rest der Datei kennt nur `backend` und weiß nicht, welche gerade läuft.
+
+const OFFLINE = typeof window !== "undefined" && Boolean(window.WH_OFFLINE);
+
+function serverBackend() {
+  return {
+    offline: false,
+    meta: () => api("/api/meta"),
+    factions: () => api("/api/factions"),
+    detachments: (id) => api(`/api/factions/${encodeURIComponent(id)}/detachments`),
+    factionData: (id) => api(`/api/factions/${encodeURIComponent(id)}/cards`),
+    validate: (list) => api("/api/lists/validate", {
+      method: "POST", body: JSON.stringify({ list }),
+    }),
+    applyPatch: (list, patch) => api("/api/lists/validate/incremental", {
+      method: "POST", body: JSON.stringify({ list, patch }),
+    }),
+    unitContext: (id) => api(`/api/datasheets/${encodeURIComponent(id)}/context`),
+    subscribe(onChange) {
+      if (typeof EventSource === "undefined") return;
+      const source = new EventSource("/api/events");
+      source.addEventListener("hello", (event) => {
+        state.dataVersion = JSON.parse(event.data).data_version;
+      });
+      source.addEventListener("ruleset-changed", (event) => {
+        const info = JSON.parse(event.data);
+        if (info.data_version !== state.dataVersion) onChange(info);
+      });
+      // Kein eigener Reconnect nötig: EventSource versucht es von selbst
+      // wieder. Ein Fehler heißt hier "Server weg", nicht "kaputt".
+      source.onerror = () => {};
+    },
+  };
+}
+
+function offlineBackend() {
+  const data = window.WH_OFFLINE;
+  const contexts = new Map();
+
+  const contextFor = (factionId) => {
+    if (!contexts.has(factionId)) {
+      contexts.set(factionId, WHRules.buildContext({
+        cards: data.cards[factionId] ?? [],
+        enhancements: data.enhancements[factionId] ?? {},
+        ruleset: data.ruleset,
+      }));
+    }
+    return contexts.get(factionId);
+  };
+
+  const check = (list) => {
+    const normalised = WHRules.normaliseList(list, data.meta.ruleset_version);
+    return WHRules.validate(normalised, contextFor(normalised.faction_id));
+  };
+
+  return {
+    offline: true,
+    meta: async () => data.meta,
+    factions: async () => data.factions,
+    detachments: async (id) => data.detachments[id] ?? [],
+    factionData: async (id) => ({
+      faction_id: id,
+      cards: data.cards[id] ?? [],
+      enhancements: data.enhancements[id] ?? {},
+      stratagems: data.stratagems[id] ?? {},
+      stratagems_by_detachment: data.stratagems_by_detachment[id] ?? {},
+    }),
+    validate: async (list) => check(list),
+    applyPatch: async (list, patch) => {
+      const start = WHRules.normaliseList(list, data.meta.ruleset_version);
+      const next = WHRules.applyAll(start, patch);
+      return { list: next, validation: check(next) };
+    },
+    unitContext: async (id) => ({
+      datasheet_id: id, available: false, synergies: [],
+      reason: data.meta.context_reason,
+    }),
+    // Ohne Server gibt es keinen neuen Regelstand zu melden. Eine neue
+    // Offline-Datei ist ein neuer Download, kein Live-Update.
+    subscribe() {},
+  };
+}
 
 // ---------------------------------------------------------------- Netzwerk
 
@@ -50,10 +145,7 @@ async function api(path, options) {
 function dispatch(...actions) {
   state.queue = state.queue.then(async () => {
     const before = state.list;
-    const result = await api("/api/lists/validate/incremental", {
-      method: "POST",
-      body: JSON.stringify({ list: state.list, patch: actions }),
-    });
+    const result = await backend.applyPatch(state.list, actions);
     state.history.push(before);
     state.future = [];
     state.list = result.list;
@@ -68,10 +160,7 @@ function dispatch(...actions) {
 }
 
 async function revalidate() {
-  state.validation = await api("/api/lists/validate", {
-    method: "POST",
-    body: JSON.stringify({ list: state.list }),
-  });
+  state.validation = await backend.validate(state.list);
 }
 
 // -------------------------------------------------------------- Persistenz
@@ -105,7 +194,7 @@ async function loadFactionCards(factionId) {
   // Ein Request bringt Karten und Detachment-Regeln. Letztere liegen daneben
   // statt in jeder Karte — sonst vervielfacht sich derselbe Text pro
   // Datasheet (bei Space Marines: 43 MB statt gut 2).
-  const data = await api(`/api/factions/${encodeURIComponent(factionId)}/cards`);
+  const data = await backend.factionData(factionId);
   for (const card of data.cards) state.cards.set(card.id, card);
   for (const [id, enhancement] of Object.entries(data.enhancements ?? {})) {
     state.enhancements.set(id, enhancement);
@@ -140,7 +229,8 @@ function cheapestCost(entryCard) {
 // ------------------------------------------------------------------- Start
 
 async function init() {
-  state.meta = await api("/api/meta");
+  backend = OFFLINE ? offlineBackend() : serverBackend();
+  state.meta = await backend.meta();
 
   const badge = $("mode-badge");
   badge.textContent = state.meta.rules_text_mode === "full"
@@ -164,7 +254,7 @@ async function init() {
     limits.append(new Option(`${limit} Pkt.`, limit));
   }
 
-  const factions = await api("/api/factions");
+  const factions = await backend.factions();
   for (const faction of factions) {
     $("faction").append(new Option(faction.name, faction.id));
   }
@@ -199,8 +289,7 @@ async function loadDetachments(factionId) {
   const select = $("detachment");
   select.innerHTML = '<option value="">– wählen –</option>';
   if (!factionId) return;
-  const detachments = await api(
-    `/api/factions/${encodeURIComponent(factionId)}/detachments`);
+  const detachments = await backend.detachments(factionId);
   for (const detachment of detachments) {
     select.append(new Option(detachment.name, detachment.id));
   }
@@ -804,8 +893,7 @@ function sectionMeta() {
 
 async function loadContext(datasheetId) {
   try {
-    const context = await api(
-      `/api/datasheets/${encodeURIComponent(datasheetId)}/context`);
+    const context = await backend.unitContext(datasheetId);
     const target = $("insp-meta");
     if (!target || state.inspected !== datasheetId) return;
     target.textContent = context.available
@@ -871,22 +959,7 @@ function exportList() {
 // MFM-Stand, eine Liste kann durch ein Update illegal werden.
 
 function connectLiveUpdates() {
-  if (typeof EventSource === "undefined") return;
-  const source = new EventSource("/api/events");
-
-  source.addEventListener("hello", (event) => {
-    state.dataVersion = JSON.parse(event.data).data_version;
-  });
-
-  source.addEventListener("ruleset-changed", (event) => {
-    const info = JSON.parse(event.data);
-    if (info.data_version === state.dataVersion) return;
-    showUpdateBanner(info);
-  });
-
-  // Kein eigener Reconnect nötig: EventSource versucht es von selbst
-  // wieder. Ein Fehler heißt hier "Server weg", nicht "kaputt".
-  source.onerror = () => {};
+  backend.subscribe(showUpdateBanner);
 }
 
 function showUpdateBanner(info) {
@@ -904,7 +977,7 @@ async function applyUpdate() {
   banner.classList.add("busy");
   $("update-text").textContent = "Regeln werden neu geladen …";
   try {
-    state.meta = await api("/api/meta");
+    state.meta = await backend.meta();
     state.dataVersion = state.meta.data_version;
     if (state.list.faction_id) {
       await loadFactionCards(state.list.faction_id);

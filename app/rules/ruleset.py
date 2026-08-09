@@ -135,6 +135,32 @@ SPECS: dict[str, RuleSpec] = {
 }
 
 
+def as_dict() -> dict:
+    """Die Konstanten für die Browser-Engine.
+
+    `app/static/rules.js` liest sie hierher aus, statt eigene Zahlen zu
+    führen. Die Logik gibt es dadurch zweimal (unvermeidbar ohne Server),
+    die Zahlen aber weiterhin nur einmal.
+    """
+    return {
+        "max_same_datasheet": MAX_SAME_DATASHEET,
+        "max_same_datasheet_battleline": MAX_SAME_DATASHEET_BATTLELINE,
+        "battleline_roles": sorted(BATTLELINE_ROLES),
+        "max_enhancements": MAX_ENHANCEMENTS,
+        "max_leaders_per_unit": MAX_LEADERS_PER_UNIT,
+        "points_limits": list(POINTS_LIMITS),
+        "default_points_limit": DEFAULT_POINTS_LIMIT,
+        "specs": {
+            spec.key: {
+                "title": spec.title,
+                "basis": spec.basis,
+                "note": spec.note,
+            }
+            for spec in SPECS.values()
+        },
+    }
+
+
 def max_copies(role: str) -> int:
     return (
         MAX_SAME_DATASHEET_BATTLELINE

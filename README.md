@@ -17,6 +17,7 @@ Der Umsetzungsplan — Datenquellen, Datenmodell, Ranking-Methodik, Synergie-Erk
 | **Listenbuilder** | Live-Validierung bei jeder Änderung, legalitätsgefilterte Zuweisungen, Budgetleiste mit Vorschau, Undo/Redo, Autosave, Export |
 | **Validator** | Punktelimit, Fraktion, Rule of Three, Epic Heroes, Enhancements, Leader-Anschluss, Transportkapazität, Warlord |
 | **Live-Updates** | Erkennt neue Wahapedia-Stände im Betrieb, lädt sie nach und meldet sie offenen Browsern — ohne Neustart |
+| **Offline-Datei** | `build_offline.py` erzeugt eine eigenständige HTML-Datei mit Daten und Regel-Engine — läuft ohne Server auf jedem Telefon |
 | **Mobil bedienbar** | Regel-Inspektor als Bottom Sheet, fingerfreundliche Trefferflächen, „Zum Home-Bildschirm" tauglich |
 
 Noch offen: Turnierdaten-Ingestion (Phase 1–3), Synergie-Engine (Phase 5), Generator (Phase 6/8). Der Meta-Abschnitt im Inspektor ist dafür vorbereitet und meldet bis dahin ehrlich „noch keine Daten".
@@ -35,7 +36,22 @@ Der ETL legt `data/warhammer_meta.sqlite3` an. Ohne Netz geht es auch aus einem 
 python -m app.etl.wahapedia --from-dir ./meine-csvs
 ```
 
-### Auf iPad oder Handy öffnen
+### Ohne Rechner: eine Datei fürs Handy
+
+Auf einem iPhone oder iPad läuft kein Python — FastAPI und SQLite fallen dort aus. Für diesen Fall baut
+
+```bash
+python -m app.build_offline                       # alle Fraktionen
+python -m app.build_offline --faction SM --out dist/marines.html
+```
+
+eine **einzelne HTML-Datei** mit Oberfläche, Regel-Engine und allen Daten darin (alle Fraktionen: rund 13 MB). Auf das Gerät kopieren, antippen, fertig: Sie läuft vollständig offline, auch im Flugmodus, und macht keinen einzigen Netzwerkzugriff.
+
+Reducer und Validator kommen dabei aus `app/static/rules.js` statt aus Python. Diese Doppelung ist der Preis dafür, dass ohne Server überhaupt validiert werden kann — `tests/test_parity.py` treibt dieselben zufälligen Aktionsfolgen durch beide Engines und vergleicht Punkte, Legalität und jeden Meldungstext.
+
+Was der Offline-Datei fehlt: Live-Updates. Ein neuer Regelstand heißt hier, die Datei neu zu bauen. `dist/` ist aus demselben Grund wie `data/` gitignored — die Datei enthält die vollständigen Regeltexte und ist für den eigenen Gebrauch, nicht zum Hochladen.
+
+### Auf iPad oder Handy öffnen (mit Rechner im selben WLAN)
 
 Die App läuft auf deinem Rechner; das Tablet oder Telefon ruft sie über das heimische WLAN auf. Beide Geräte müssen im **selben Netz** sein.
 
@@ -102,7 +118,7 @@ Ein `python -m app.etl.wahapedia` von Hand wird ebenfalls bemerkt: Maßgeblich i
 pytest
 ```
 
-158 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
+195 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
 
 ## Aufbau
 
@@ -120,7 +136,9 @@ app/
   live.py              Datenstand-Zähler für Live-Updates
   etl/updates.py       Update-Erkennung und -Übernahme
   api/main.py          FastAPI inkl. SSE-Stream
+  static/rules.js      Reducer + Validator für den Browser (Offline-Modus)
   static/              Builder-Oberfläche (kein Build-Schritt)
+  build_offline.py     Baut die eigenständige HTML-Datei fürs Telefon
 ```
 
 ### Zwei Abweichungen vom Plan

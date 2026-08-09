@@ -4,8 +4,10 @@
 # die GW-IP sind. Der Plan (PLAN.md §1.1, §6.3) erlaubt die vollständige
 # Anzeige ausdrücklich nur lokal in einer privaten, self-gehosteten Instanz —
 # ein Commit in ein GitHub-Repository wäre genau die Veröffentlichung, die
-# diese Begründung aushebelt.
+# diese Begründung aushebelt. Dasselbe gilt für die Offline-HTML aus
+# app/build_offline.py — deshalb steht dist/ hier mit drin.
 data/
+dist/
 *.sqlite3
 *.sqlite3-journal
 *.db
