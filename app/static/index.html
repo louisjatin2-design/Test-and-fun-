@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>warhammer-meta · Listenbuilder</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⚔</text></svg>">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <strong>warhammer-meta</strong>
+    <span class="mode" id="mode-badge" title="Anzeigetiefe der Regeltexte"></span>
+  </div>
+
+  <div class="controls">
+    <label>Fraktion
+      <select id="faction"><option value="">– wählen –</option></select>
+    </label>
+    <label>Detachment
+      <select id="detachment"><option value="">– wählen –</option></select>
+    </label>
+    <label>Limit
+      <select id="points-limit"></select>
+    </label>
+  </div>
+
+  <div class="budget" id="budget">
+    <div class="budget-bar"><span id="budget-fill"></span></div>
+    <output id="budget-text">0 / 0</output>
+  </div>
+
+  <div class="actions">
+    <button id="undo" title="Rückgängig (Strg+Z)" disabled>↶</button>
+    <button id="redo" title="Wiederholen (Strg+Y)" disabled>↷</button>
+    <button id="export">Export</button>
+  </div>
+</header>
+
+<main>
+  <section class="catalog" aria-label="Einheitenkatalog">
+    <div class="catalog-head">
+      <input id="search" type="search" placeholder="Einheit suchen …" autocomplete="off">
+      <select id="sort">
+        <option value="name">Name</option>
+        <option value="points">Punkte</option>
+        <option value="role">Rolle</option>
+      </select>
+    </div>
+    <div id="catalog-list" class="scroll"></div>
+  </section>
+
+  <section class="army" aria-label="Armeeliste">
+    <div class="army-head">
+      <input id="list-name" value="Neue Liste" aria-label="Listenname">
+      <span id="legal-badge" class="badge"></span>
+    </div>
+    <div id="army-list" class="scroll"></div>
+    <div id="findings"></div>
+  </section>
+
+  <aside class="inspector" id="inspector" aria-label="Regel-Inspektor" hidden>
+    <div class="inspector-head">
+      <div>
+        <h2 id="insp-name"></h2>
+        <div id="insp-sub" class="sub"></div>
+      </div>
+      <div class="inspector-buttons">
+        <button id="insp-pin" title="Angeheftet lassen" aria-pressed="false">📌</button>
+        <button id="insp-close" title="Schließen (Esc)">✕</button>
+      </div>
+    </div>
+    <div id="insp-body" class="scroll"></div>
+    <footer class="inspector-foot" id="insp-foot"></footer>
+  </aside>
+</main>
+
+<div id="empty-state" class="empty">
+  <h1>Keine Regeldaten geladen</h1>
+  <p>Der Regel-Inspektor braucht die lokale Regel-Datenbank. Einmalig ausführen:</p>
+  <pre>python -m app.etl.wahapedia</pre>
+  <p class="hint">Lädt den Wahapedia-Export in <code>data/warhammer_meta.sqlite3</code>.
+     Die Daten bleiben lokal und werden nicht eingecheckt.</p>
+</div>
+
+<footer class="attribution" id="attribution"></footer>
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>
