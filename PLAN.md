@@ -2,7 +2,16 @@
 
 **Arbeitstitel:** `warhammer-meta` — eine Web-App, die (A) Turnierergebnisse verschiedener Quellen einsammelt, normalisiert und Fraktionen/Detachments/Einheiten statistisch sauber rankt, und (B) daraus plus den echten Regeldaten einen erklärbaren Listen-Generator speist.
 
-Stand der Recherche: 09.08.2026. Alle unten genannten Datenquellen wurden live geprüft (HTTP-Status, Schema, Feldnamen), nicht aus dem Gedächtnis zitiert.
+Stand der Recherche: 09.08.2026. Alle unten genannten Datenquellen wurden live geprüft (HTTP-Status, Schema, Feldnamen, `robots.txt`), nicht aus dem Gedächtnis zitiert.
+
+**Getroffene Entscheidungen:**
+
+| Frage | Entscheidung |
+|---|---|
+| Turnierdaten | Scraping-Weg prüfen und, soweit zulässig, nutzen — Details und Auflagen in §1.4. Manuell-Import wird trotzdem zuerst gebaut. |
+| Generator | Beides, **Assistent zuerst** (v1: bewerten/ergänzen), Vollautomatik in v2 auf demselben Constraint- und Synergie-Code. |
+| Stack | **Python/FastAPI + PostgreSQL + Next.js** (Begründung in §7). |
+| Repo | `main` als Default-Branch, Arbeit läuft über Pull Requests. |
 
 ---
 
@@ -68,9 +77,30 @@ Auflagen: Wahapedia bittet um Nennung („powered by Wahapedia"). Das ist einzuh
 | **Stat Check**, **Warp Friends** | Veröffentlichte Meta-Auswertungen | Referenzwerte zum Validieren der eigenen Zahlen |
 | **Manueller/TO-Upload** | CSV/JSON-Import in der eigenen App | Immer bauen — als Fallback und für lokale Turniere |
 
-**Empfohlene Reihenfolge:** (1) BCP/TableTopTO schriftlich um API- bzw. Export-Zugang bitten — das ist ein Zweizeiler und löst das Problem sauber; (2) parallel den Import-Pfad für manuell exportierte Dateien bauen, damit die App unabhängig vom Ausgang funktioniert; (3) Scraping nur, wenn ToS/robots.txt es zulassen, dann mit Rate-Limit, Caching, User-Agent mit Kontakt und **ohne** Weiterveröffentlichung der Rohdaten.
+#### Entschiedener Weg: Scraping, aber geprüft
 
-Die gesamte Ingestion wird hinter ein `SourceAdapter`-Interface gelegt. So ist der Quellenzugang eine austauschbare Komponente und keine Architekturentscheidung — falls BCP wegfällt, kippt nicht das Projekt.
+`robots.txt`-Befunde vom 09.08.2026:
+
+| Host | `robots.txt` | Folge |
+|---|---|---|
+| `bestcoastpairings.com` | `User-agent: * / Disallow:` — leerer Disallow, also **keine Crawling-Einschränkung** | Robots-seitig zulässig |
+| `www.tabletopto.com` | HTTP 404, keine Datei | Keine ausgesprochene Einschränkung |
+| `listhammer.info` | Cloudflare Content Signals: `search=yes, ai-train=no, use=reference`, blockt Bots mit HTTP 403 | **Nicht scrapen.** Nur als manuelle Referenz zum Plausibilisieren eigener Zahlen |
+| `wahapedia.ru` | Einschränkungen nur für `YandexBot`; CSV-Export wird ausdrücklich angeboten | Export nutzen, Attribution setzen |
+
+⚠️ **`robots.txt` ist nicht die AGB.** Die BCP-Terms liegen unter `/eula` bzw. `/privacy`, sind aber clientseitig gerendert und maschinell nicht auslesbar — sie wurden im Rahmen dieser Recherche **nicht** geprüft. **Erste Aufgabe in Phase 1**, vor der ersten Zeile Scraper-Code: `/eula` und `/privacy` im Browser lesen und auf Klauseln zu *automated access, scraping, data mining, commercial reuse* prüfen. Findet sich eine Verbotsklausel, gilt der Weg als versperrt und der Import-/Anfrage-Pfad übernimmt — die Architektur (unten) fängt das ohne Umbau ab.
+
+Verbindliche Auflagen für den Scraper, sobald er läuft:
+- Rate-Limit deutlich unter dem, was die Seite spürt (Richtwert ≤ 1 Request/Sekunde, nachts, mit Backoff bei 429/5xx)
+- Aussagekräftiger User-Agent mit Kontaktadresse — kein Tarnen als Browser
+- Aggressives Caching über `content_hash`; jedes Turnier wird genau einmal geholt, danach nur noch Deltas
+- Rohdaten bleiben lokal; veröffentlicht werden **nur Aggregate**, keine Kopie fremder Datenbestände
+- Keine personenbezogenen Daten über den Spielernamen hinaus; Namen im öffentlichen UI pseudonymisierbar
+- Ein Schalter, der die Quelle in einer Minute abschaltet, wenn der Betreiber widerspricht
+
+Parallel dazu — nicht statt dessen: **Manuell-Import ab Tag 1** und eine formlose Anfrage nach offiziellem Export-/API-Zugang bei BCP und TableTopTO. Ein „ja" ersetzt den ganzen Scraper und macht das Rechtsthema gegenstandslos.
+
+Die gesamte Ingestion liegt hinter einem `SourceAdapter`-Interface. Der Quellenzugang ist damit eine austauschbare Komponente und keine Architekturentscheidung — fällt BCP weg, kippt nicht das Projekt.
 
 ---
 
@@ -191,7 +221,19 @@ Eine generierte Liste, die irgendeine dieser Regeln bricht, ist wertlos — desh
 - **Rollenabdeckung** als Vektor: Anti-Tank, Anti-Horde, Anti-Elite, Objective Control (OC), Screening, Board Control/Deployment, Secondary-Scoring/Actions, Haltbarkeit, Reichweite. Jede Einheit bekommt aus den Profildaten ein Rollenprofil (z. B. erwarteter Schaden gegen T5/Sv3+ vs. T10/Sv2+/4++ — direkt aus `Datasheets_wargear` berechenbar). Lücken im Vektor kosten Punkte in der Bewertung.
 - **Matchup-Abdeckung**: gewichtet gegen die aktuellen Top-N-Fraktionen des Metas.
 
-### 5.3 Algorithmus — pragmatisch statt puristisch
+### 5.3 Ausbaustufen: Assistent zuerst, Vollautomatik danach
+
+**v1 — Assistent.** Der Nutzer bringt eine Liste mit (Text oder Roster-Datei). Die App:
+1. parst und validiert sie gegen alle harten Regeln (§5.1),
+2. zeigt das Rollenprofil und markiert Lücken gegen vergleichbare erfolgreiche Listen,
+3. weist auf ungenutzte Synergien hin („dieser Charakter könnte sich an X anschließen"),
+4. füllt auf Wunsch die restlichen Punkte („fülle mir die letzten 240 Punkte").
+
+Das ist der Modus, der im Alltag am häufigsten gebraucht wird, und er benötigt vom Optimizer nur den Teilraum der freien Punkte — also deutlich weniger Suchaufwand.
+
+**v2 — Vollautomatik.** Komplette Liste aus Fraktion + Detachment + Punktelimit. Nutzt exakt denselben Constraint-Validator, dieselben Synergie-Scores und denselben Optimizer, nur mit leerer Startliste und größerem Suchraum. Der Aufwand steckt fast vollständig in v1; v2 ist danach vor allem eine Frage von Suchbudget und Ergebnis-Diversifizierung.
+
+### 5.4 Algorithmus — pragmatisch statt puristisch
 
 Reine Generierung „aus dem Nichts" per Solver produziert legale, aber unsinnige Listen. Der deutlich bessere Weg:
 
@@ -200,9 +242,9 @@ Reine Generierung „aus dem Nichts" per Solver produziert legale, aber unsinnig
 3. **Lokale Suche / Simulated Annealing** auf den quadratischen Synergie-Termen (die ein ILP nicht sauber abbildet): Tauschoperationen, bis keine Verbesserung mehr.
 4. **Diversifizierung:** k verschiedene Vorschläge mit erzwungenem Mindestabstand, statt fünfmal derselben Liste.
 
-Zusätzlicher Modus, der im Alltag wahrscheinlich der meistgenutzte wird: **„Fülle mir die letzten 240 Punkte"** — der Nutzer gibt seine bestehende Liste ein, der Optimizer arbeitet nur auf dem Rest. Deutlich nützlicher als eine Liste vom Reißbrett.
+Im Assistenten-Modus (v1) entfallen Schritt 1 und 2 weitgehend: der „Kern" ist die vom Nutzer gesperrte Liste, optimiert wird nur der Rest.
 
-### 5.4 Erklärbarkeit (Pflicht, nicht Kür)
+### 5.5 Erklärbarkeit (Pflicht, nicht Kür)
 
 Jeder Vorschlag liefert Begründungen mit:
 > *Warum diese Einheit?* — In 71 % der Top-8-Listen dieses Detachments (n = 143, letzte 6 Wochen).
@@ -257,16 +299,20 @@ POST /api/import/tournament   { csv | json }        # TO-/Manuell-Upload
 | Phase | Inhalt | Ergebnis | Aufwand* |
 |---|---|---|---|
 | **0** | Repo, Docker, Schema, Wahapedia-ETL, 11ed-Datenvalidierung (§1.1) | Vollständige Regel-DB, per Cron aktuell | ~1 Woche |
-| **1** | Turnier-Ingest (mind. Manuell-Import), Normalisierung, Fraktions-Ranking mit CI + Recency | Erste nutzbare Ranking-Seite | ~2 Wochen |
+| **1** | **ToS-Prüfung (§1.4) zuerst.** Dann Manuell-Import + `SourceAdapter`, Scraper nur bei grünem Ergebnis. Normalisierung, Fraktions-Ranking mit CI + Recency | Erste nutzbare Ranking-Seite | ~2 Wochen |
 | **2** | Listen-Parser + Einheiten-Statistik, Match-Rate-Dashboard | Einheiten-Ebene wird auswertbar | ~2 Wochen |
 | **3** | Skill-bereinigtes Modell (Bradley-Terry + Fraktionseffekt), Matchup-Matrix | Der eigentliche statistische Mehrwert | ~1,5 Wochen |
-| **4** | Synergie-Engine: Regel-Extraktion + empirisches Mining | Synergie-Explorer im UI | ~2,5 Wochen |
-| **5** | Constraint-Validator + Generator (Seeding → CP-SAT → Local Search) | Listen-Generator mit Begründungen | ~3 Wochen |
-| **6** | UI-Politur, Teilen/Export, Performance, Zugriffsschutz | v1 | ~2 Wochen |
+| **4** | Constraint-Validator als eigener Service + Listen-Import/-Prüfung | „Ist meine Liste legal?" — eigenständig nützlich | ~1 Woche |
+| **5** | Synergie-Engine: Regel-Extraktion + empirisches Mining | Synergie-Explorer im UI | ~2,5 Wochen |
+| **6** | **Generator v1 (Assistent):** Rollenprofil, Lücken, Synergie-Hinweise, Restpunkte füllen | Der entschiedene v1-Funktionsumfang | ~2 Wochen |
+| **7** | UI-Politur, Teilen/Export, Performance, Zugriffsschutz | **v1 ausgeliefert** | ~2 Wochen |
+| **8** | **Generator v2 (Vollautomatik):** Archetyp-Clustering, CP-SAT, Local Search, Diversifizierung | Listen aus dem Nichts | ~2,5 Wochen |
 
 \* Aufwand für eine Person, nebenbei; die Zahlen sind Größenordnungen, keine Zusagen.
 
-**Sinnvoller MVP-Schnitt (Phase 0–2):** Regel-DB + Fraktionsranking mit ehrlichen Konfidenzintervallen + Einheiten-Inklusionsraten. Das ist für sich genommen schon nutzbar und liefert die Datenbasis, ohne die Phase 3–5 ohnehin nicht funktionieren.
+**Sinnvoller MVP-Schnitt (Phase 0–2):** Regel-DB + Fraktionsranking mit ehrlichen Konfidenzintervallen + Einheiten-Inklusionsraten. Das ist für sich genommen schon nutzbar und liefert die Datenbasis, ohne die Phase 3–8 ohnehin nicht funktionieren.
+
+Der Reihenfolge liegt eine Absicht zugrunde: Phase 4 zieht den Constraint-Validator **vor** die Synergie-Engine. Er ist die einzige Komponente, die beide Generator-Stufen zwingend brauchen, er ist vollständig aus Regeldaten baubar (unabhängig davon, wie die Turnierdatenfrage ausgeht) und er ist für sich allein schon ein benutzbares Feature.
 
 ---
 
@@ -274,7 +320,7 @@ POST /api/import/tournament   { csv | json }        # TO-/Manuell-Upload
 
 | Risiko | Behandlung |
 |---|---|
-| **Turnierdaten-Zugang bricht weg** (BCP-ToS, API-Änderung) | `SourceAdapter`-Abstraktion; Manuell-Import von Tag 1; zuerst offiziell um Zugang fragen |
+| **Turnierdaten-Zugang bricht weg** (ToS-Klausel, API-Änderung, Sperre) | `SourceAdapter`-Abstraktion; Manuell-Import von Tag 1; ToS-Prüfung als erste Aufgabe in Phase 1; Abschalter pro Quelle; parallel offizielle Anfrage |
 | **GW-IP / Regeltexte** | Keine Volltext-Regeln ausliefern, nur abgeleitete Tags + Deep-Links; Wahapedia-Attribution |
 | **Listen-Parsing unter 90 %** | Alias-Tabelle als gepflegte Repo-Datei, Review-Queue, strukturierte Formate bevorzugen; Match-Rate sichtbar machen |
 | **Statistische Fehlschlüsse** (Confounds, kleine n) | Shrinkage, CIs, Mindest-n, skill-bereinigtes Modell, Einheiten-Stats nur innerhalb Fraktion+Detachment |
@@ -284,14 +330,13 @@ POST /api/import/tournament   { csv | json }        # TO-/Manuell-Upload
 
 ---
 
-## 10. Offene Entscheidungen
+## 10. Noch offen
 
-1. **Datenzugang:** Bestehen bereits Beziehungen zu einem TO / BCP-Account / TableTopTO? Das bestimmt, ob Phase 1 zwei Tage oder zwei Wochen dauert.
-2. **Generator-Tiefe:** Vollautomatische Listen oder eher Assistent („fülle die restlichen Punkte", „bewerte meine Liste")? Der Assistent-Modus ist billiger und im Alltag vermutlich nützlicher.
-3. **Stack:** Python-Backend + Next.js-Frontend (Empfehlung) oder alles in TypeScript (einfacher zu deployen, aber Statistik/Solver werden mühsam)?
-4. **Zielgruppe:** Privates Werkzeug (self-hosted, kein Auth, keine Rechtsfragen bei Weiterveröffentlichung) oder öffentliche Web-App (dann Auth, Rate-Limits, ToS-Klärung und Attribution zwingend)?
-5. **Umfang:** Nur 40k, oder soll die Architektur AoS gleich mittragen? (Wahapedia exportiert beides — als Parameter mitzudenken kostet in Phase 0 fast nichts, nachträglich viel.)
-6. **Format-Fokus:** 2000 Pkt. GT/WTC als Standard, oder auch 1000 Pkt./Combat Patrol?
+Nichts davon blockiert Phase 0 — aber Punkt 1 und 2 sollten vor Phase 1 geklärt sein, weil sie nachträglich teuer werden.
+
+1. **Zielgruppe:** Privates Werkzeug (self-hosted, kein Auth, Rechtsfragen weitgehend entschärft) oder öffentliche Web-App? Das ist bei der gewählten Scraping-Strategie der Unterschied zwischen „private Auswertung" und „Weiterveröffentlichung fremder Daten" — juristisch zwei verschiedene Dinge. Bis zur Klärung wird auf self-hosted hin gebaut; das ist die jederzeit erweiterbare Richtung.
+2. **Umfang:** Nur 40k, oder soll die Architektur Age of Sigmar gleich mittragen? Wahapedia exportiert beides. Ein `game_system`-Feld in Phase 0 mitzuziehen kostet fast nichts, es nachträglich einzuführen ist eine Schema-Migration durch alle Tabellen. **Default: Feld einbauen, nur 40k befüllen.**
+3. **Format-Fokus:** 2000 Pkt. GT/WTC als Standard gesetzt — sollen 1000 Pkt. und Combat Patrol als eigene Auswertungsfenster mitlaufen? (Das Datenmodell trägt es über `tournament.format` bereits.)
 
 ---
 
