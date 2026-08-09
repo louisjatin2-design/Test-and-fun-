@@ -10,7 +10,8 @@ Stand der Recherche: 09.08.2026. Alle unten genannten Datenquellen wurden live g
 |---|---|
 | Turnierdaten | Scraping-Weg prüfen und, soweit zulässig, nutzen — Details und Auflagen in §1.4. Manuell-Import wird trotzdem zuerst gebaut. |
 | Generator | Beides, **Assistent zuerst** (v1: bewerten/ergänzen), Vollautomatik in v2 auf demselben Constraint- und Synergie-Code. |
-| Stack | **Python/FastAPI + PostgreSQL + Next.js** (Begründung in §7). |
+| Stack | **Python/FastAPI + PostgreSQL + Next.js** (Begründung in §8). |
+| Listenbuilder | Interaktive Arbeitsfläche statt Formular; Klick auf eine Einheit öffnet ihre Regeln im Seitenpanel. Anzeigetiefe der Regeltexte über `RULES_TEXT_MODE`, Default `derived` (§6). |
 | Repo | `main` als Default-Branch, Arbeit läuft über Pull Requests. |
 
 ---
@@ -65,7 +66,7 @@ Auflagen: Wahapedia bittet um Nennung („powered by Wahapedia"). Das ist einzuh
 ### 1.3 Listen-Struktur zum Parsen
 
 - **BSData/wh40k-11e** — Community-Katalogdateien (XML, BattleScribe-/New-Recruit-Format). Damit lassen sich exportierte Rosters (`.rosz`/`.ros`, New-Recruit-JSON) *strukturiert* einlesen statt Freitext zu raten.
-- **GW-App-Textexport** und handgetippte Listen: nur als Freitext verfügbar → Parser (siehe §6).
+- **GW-App-Textexport** und handgetippte Listen: nur als Freitext verfügbar → Parser (siehe §7).
 
 ### 1.4 Turnierergebnisse — der heikle Teil
 
@@ -137,7 +138,8 @@ standing(tournament_id, player_id, rank, wins, losses, draws, tiebreak)
 ```
 
 **Gold — Auswertungs-Views** (materialisiert, nächtlich):
-`faction_window_stats`, `matchup_matrix`, `unit_usage`, `unit_cooccurrence`, `archetype_cluster`.
+`faction_window_stats`, `matchup_matrix`, `unit_usage`, `unit_cooccurrence`, `archetype_cluster`,
+`datasheet_card` (denormalisiertes Read-Model für den Regel-Inspektor — Begründung in §6.4).
 
 **Alles trägt `ruleset_version`.** Ein Dataslate oder MFM-Update macht ältere Daten nicht wertlos, aber nicht mehr direkt vergleichbar — die Version ist deshalb kein Metadatum, sondern Teil des Schlüssels.
 
@@ -223,7 +225,7 @@ Eine generierte Liste, die irgendeine dieser Regeln bricht, ist wertlos — desh
 
 ### 5.3 Ausbaustufen: Assistent zuerst, Vollautomatik danach
 
-**v1 — Assistent.** Der Nutzer bringt eine Liste mit (Text oder Roster-Datei). Die App:
+**v1 — Assistent.** Der Nutzer bringt eine Liste mit (Text oder Roster-Datei) oder baut sie direkt im Listenbuilder (§6). Die App:
 1. parst und validiert sie gegen alle harten Regeln (§5.1),
 2. zeigt das Rollenprofil und markiert Lücken gegen vergleichbare erfolgreiche Listen,
 3. weist auf ungenutzte Synergien hin („dieser Charakter könnte sich an X anschließen"),
@@ -255,7 +257,123 @@ Ohne diese Ebene ist der Generator eine Blackbox, der niemand vertraut.
 
 ---
 
-## 6. Das größte technische Risiko: Listen-Parsing
+## 6. Der Listenbuilder — Arbeitsfläche mit Regel-Inspektor
+
+Der Generator (§5) schlägt vor; der **Builder** ist die Fläche, auf der tatsächlich gearbeitet wird. Er ist keine eigene Engine, sondern die Oberfläche, an der Constraint-Validator (§5.1), Rollenprofil (§5.2), Synergie-Scores (§4) und Meta-Zahlen (§3) anfassbar werden. Zwei Dinge entscheiden, ob er benutzt wird: **er muss beim Bauen mitdenken statt erst auf Knopfdruck**, und **er muss die Regeln zeigen, ohne dass man ihn verlässt**.
+
+### 6.1 Was „besser" konkret heißt
+
+Der übliche Listenbuilder ist ein Formular mit Punktezähler. Die konkreten Abweichungen davon:
+
+| Verbesserung | Warum |
+|---|---|
+| **Live-Validierung bei jeder Änderung** statt „Prüfen"-Button | Fehler beim Entstehen sehen, nicht zwanzig Minuten später. Der Validator aus §5.1 läuft inkrementell auf dem Patch, nicht jedes Mal auf der ganzen Liste. |
+| **Fehler ≠ Warnung** | Harte Regelbrüche (§5.1) blockieren den Export und sind rot; weiche Hinweise (Rollenlücke, ungenutzte Synergie) sind gelb und dürfen ignoriert werden. Ein Builder, der bevormundet, wird umgangen. |
+| **Kontextsensitiver Katalog** | Die Einheitenauswahl wird nach „passt zu dem, was schon drin steht" sortiert (Synergie-Score gegen die aktuelle Liste) statt alphabetisch — mit sichtbarem Umschalter auf Rolle, Punkte, Name, Inklusionsrate. |
+| **Nur legale Ziele anbieten** | Leader-Anschluss, Transport-Zuweisung und Enhancements werden per Drag & Drop bzw. Auswahl gesetzt; angeboten wird ausschließlich, was `Datasheets_leader`, die Transportkapazität und `Datasheets_enhancements` hergeben. Was der Builder anbietet, darf der Validator nie ablehnen (Testkriterium, §6.7). |
+| **Budgetleiste mit Vorschau** | Verbraucht / frei / über Limit — und beim Überfahren eines Katalogeintrags die Vorschau „danach: 1.870 / 2.000". |
+| **Rollenprofil läuft mit** | Das Radar aus §5.2 aktualisiert sich live; Lücken gegenüber vergleichbaren erfolgreichen Listen sind während des Bauens sichtbar, nicht erst in einem Bericht am Ende. |
+| **Undo/Redo und benannte Stände** | Listenbau ist Ausprobieren. Ohne Undo probiert niemand aus. |
+| **Vorschläge als Patch übernehmen** | Jede Generator-Empfehlung (§5.3) erscheint als Diff auf die Liste mit „Übernehmen" / „Verwerfen" — kein Moduswechsel, kein Neuladen. |
+| **Local-first mit Autosave** | Der Builder-State liegt im Browser (§6.5); ein Verbindungsabbruch kostet keine Liste. Sync und Teilen sind optional obendrauf. |
+| **Export ohne Umweg** | Klartext im GW-App-Stil, New-Recruit-kompatibles JSON, Teilen-Link. Der eigene Parser (§7) muss den eigenen Export fehlerfrei zurücklesen — der billigste Dauertest, den der Parser bekommen kann. |
+
+### 6.2 Der Regel-Inspektor: Klick auf eine Einheit zeigt ihre Regeln
+
+**Die Interaktion.** Ein Klick (Desktop) bzw. Tap (Mobil) auf eine Einheit — in der Liste *oder* im Katalog — öffnet den Inspektor: auf dem Desktop als Seitenpanel rechts, auf dem Mobilgerät als Bottom Sheet. **Die Liste bleibt dabei sichtbar.** Das ist kein Layout-Detail: Regeln liest man beim Listenbau immer *vergleichend*, und jede Navigation, die die Liste verdeckt, reißt den Gedanken ab. Erneuter Klick oder `Esc` schließt; ein Pin hält das Panel offen, während weitergebaut wird.
+
+**Inhalt in fester Reihenfolge** — das Wichtigste zuerst, Details aufklappbar:
+
+| # | Abschnitt | Quelle |
+|---|---|---|
+| 1 | Kopf: Name, Punkte für die gewählte Truppgröße, Rolle, Fraktions- und Einheiten-Keywords als Chips | `Datasheets`, `Datasheets_models_cost`, `Datasheets_keywords` |
+| 2 | Profilwerte je Modellzeile: M, T, Sv, Inv, W, Ld, OC, Basegröße | `Datasheets_models` |
+| 3 | Waffen, getrennt nach Fern- und Nahkampf: Range, A, BS/WS, S, AP, D plus Waffen-Keywords | `Datasheets_wargear` |
+| 4 | Fähigkeiten, gruppiert nach Core / Faction / Detachment / Datasheet / Wargear | `Datasheets_abilities.type`, `Abilities` |
+| 5 | Schadensprofil („Damaged: 1–4 Wounds Remaining") | `Datasheets.damaged_w`, `damaged_description` |
+| 6 | **Anschluss:** welche Charaktere sich anschließen dürfen bzw. an welche Einheiten dieser Charakter darf — jeder Eintrag klickbar und springt in den Inspektor der Zieleinheit | `Datasheets_leader` |
+| 7 | Transport: Kapazität und zugelassene Keywords | `Datasheets.transport` |
+| 8 | Im gewählten Detachment erlaubte Enhancements mit Kosten | `Datasheets_enhancements`, `Enhancements` |
+| 9 | Auf diese Einheit anwendbare Stratagems (Keyword- und Detachment-Abgleich) | `Stratagems`, `Detachment_abilities` |
+| 10 | Truppstärken und Ausrüstungsoptionen | `Datasheets_unit_composition`, `Datasheets_options` |
+| 11 | **Meta-Kontext**, optisch klar abgesetzt: Inklusionsrate mit n und CI, Trend, Synergie-Hinweise bezogen auf die *aktuelle* Liste | §3, §4 |
+| 12 | Fußzeile: Quelle, Errata-Stand, MFM-Version, Deep-Link zu Wahapedia | `Source`, `Last_update` |
+
+Abschnitt 11 steht bewusst unten und optisch getrennt: **Regeln sind Fakten, Statistik ist Meinung mit Fehlerbalken.** Beides im selben Panel zu vermischen wäre genau der Fehler, den §3 sonst überall vermeidet.
+
+Die Abschnitte 6 bis 9 sind der eigentliche Gewinn gegenüber dem Nachschlagen auf einer Regelseite. Sie beantworten nicht „was kann diese Einheit", sondern „was kann diese Einheit **in dieser Liste**": Anschlussziele werden gegen den tatsächlichen Listeninhalt markiert („bereits enthalten"), Enhancements gegen das gewählte Detachment gefiltert, Stratagems gegen dessen Regeln.
+
+### 6.3 Anzeigetiefe der Regeltexte — zwei Modi
+
+Hier kollidiert das gewünschte Verhalten mit einer Auflage aus §1.1: **im Produkt sollen keine vollständigen Regeltext-Kopien ausgeliefert werden**, weil die Texte GW-IP sind. Ein Inspektor, der nur Namen zeigt, ist dagegen nutzlos. Aufgelöst wird das über einen Schalter — nicht über einen Kompromiss, der beides halb macht:
+
+`RULES_TEXT_MODE = derived | full` (Deployment-Konfiguration, Default `derived`)
+
+| | `derived` — Default, für jede öffentliche Instanz | `full` — nur self-hosted |
+|---|---|---|
+| Profil- und Waffenwerte | ja; ohne diese Zahlen ist ein Builder wertlos | ja |
+| Fähigkeiten | Name + **generierte Kurzform aus den Effekt-Tags** (§4.1), z. B. „Reroll Hits (Aura 6″)", „Lethal Hits", „+1 to Wound vs. CHAOS" | Volltext aus der lokalen DB |
+| Stratagems / Enhancements | Name, CP- bzw. Punktkosten, Phase, Timing-Tag | Volltext |
+| immer | Deep-Link auf die Wahapedia-Seite samt Anker, Attributionszeile | dito |
+
+Der `derived`-Modus kostet **keine zusätzliche Arbeit**: Die Effekt-Tags werden für die Synergie-Erkennung in §4.1 ohnehin extrahiert und liegen als geprüfte Repo-Datei vor — der Inspektor rendert nur, was es bereits gibt. Umgekehrt gilt: Wo die Extraktion für eine Fähigkeit nichts hergibt, zeigt der Inspektor ehrlich „nur auf Wahapedia" mit Link statt einer erfundenen Zusammenfassung.
+
+Eine Abhängigkeit in der Reihenfolge ist dabei zu benennen: Die Effekt-Tags entstehen erst in Phase 5, der Builder aber schon in Phase 4b (§9). Bis dahin zeigt `derived` bei Fähigkeiten nur Name und Deep-Link. Das ist hinnehmbar, weil der Default-Zielfall self-hosted ist (§11.1) und dort `full` ab Tag eins verfügbar ist — eine öffentliche Instanz sollte vor Phase 5 ohnehin nicht online gehen.
+
+`full` ist an den self-hosted-Fall aus §11.1 gebunden und beim ersten Start ausdrücklich zu bestätigen. **Ob `full` je für eine öffentliche Instanz freigegeben wird, ist keine technische, sondern eine rechtliche Entscheidung** — sie steht in §11.1 offen. Der Schalter existiert, damit sie nachträglich ohne Umbau umsetzbar ist. Auch `derived` liefert mit den Profilwerten GW-Daten aus; das ist die in §1.1 bereits akzeptierte Linie (abgeleitete Daten plus Verlinkung), nicht mehr.
+
+### 6.4 Datenweg: warum der Inspektor sofort aufgehen muss
+
+Ein Panel, das nach dem Klick 400 ms lädt, wird nach dem dritten Mal nicht mehr geöffnet — damit wäre das Feature tot. Budget: **unter 100 ms vom Klick bis zum vollständig sichtbaren Regelteil**, im Normalfall ohne Netzwerkzugriff.
+
+- **Ein denormalisiertes Read-Model statt zwölf Joins.** `datasheet_card(datasheet_id, ruleset_version, mfm_version, payload JSONB)` als materialisierte Gold-View (§2) — die Panel-Abschnitte 1–10 und 12 in einem Dokument, nächtlich mit dem ETL neu gebaut.
+- **Prefetch pro Fraktion.** Sobald Fraktion und Detachment gewählt sind, wird der komplette Kartensatz dieser Fraktion einmal geladen (Größenordnung 60–120 Datasheets) und clientseitig gehalten (TanStack Query + IndexedDB). Jeder weitere Klick ist ein lokaler Lookup — und der Builder funktioniert nebenbei offline.
+- **Kontextteile nachladen.** Abschnitt 11 (Meta, Synergie zur aktuellen Liste) kommt asynchron und füllt sich nach; das Panel wartet nie darauf. Skeleton statt Spinner, damit das Layout nicht springt.
+- **Cache-Invalidierung über `ruleset_version` + `mfm_version` im Cache-Key.** Ein Dataslate macht alte Karten nicht falsch, sondern zu einer anderen Version — konsistent mit §2.
+
+Ergänzende Endpunkte zum API-Entwurf in §8:
+
+```
+GET  /api/datasheets/{id}/card?ruleset=&mode=derived|full
+GET  /api/factions/{id}/cards?detachment=&ruleset=     # Bulk-Prefetch für den Builder
+GET  /api/datasheets/{id}/context?list=                # Meta + Synergie im Listenkontext
+POST /api/lists/validate/incremental                   { list, patch }
+```
+
+### 6.5 Zustandsmodell
+
+Die Liste ist ein explizites Dokument, kein Formularzustand — sonst gibt es weder Undo noch Teilen noch Diff:
+
+```
+BuilderList {
+  ruleset_version, mfm_version, faction_id, detachment_id, points_limit,
+  entries: [ { uid, datasheet_id, model_count, wargear[], enhancement_id,
+               attached_to_uid,      # Leader an Bodyguard, gemäß leader_attach
+               transported_in_uid } ]
+}
+```
+
+Jede Änderung läuft als benannte Aktion durch einen Reducer (`ADD_UNIT`, `ATTACH_LEADER`, `SET_ENHANCEMENT`, …). Daraus folgt dreierlei fast geschenkt: Undo/Redo *ist* die Aktionshistorie, ein Generator-Vorschlag ist eine Liste von Aktionen (§6.1, „als Patch übernehmen"), und **derselbe Reducer läuft serverseitig im Generator** — Builder und Generator können die Liste damit gar nicht unterschiedlich interpretieren.
+
+Das Validierungsergebnis ist **abgeleiteter Zustand und wird nie gespeichert.** Es hängt an `ruleset_version` und `mfm_version`; eine persistierte „ist legal"-Flagge wäre nach dem nächsten Dataslate schlicht eine Lüge.
+
+### 6.6 Nicht-Ziele
+
+Kein Spielsimulator und kein Würfelrechner in v1 — erwartete Schadenswerte kommen ausschließlich aus dem Rollenprofil (§5.2) und sind als Näherung gekennzeichnet. Kein Wahapedia-Klon: Der Inspektor zeigt, was zum Listenbau nötig ist, und verlinkt für alles Weitere. Keine Regel-Engine, die Spielzüge auflöst.
+
+### 6.7 Abnahmekriterien
+
+Testbar formuliert, weil „fühlt sich gut an" kein Kriterium ist:
+
+1. **Vollständigkeit.** Contract-Test über *alle* Datasheets der Regel-DB: Jede Karte rendert, kein Pflichtabschnitt ist unbeabsichtigt leer, fehlende Quelldaten erscheinen als expliziter „keine Daten"-Zustand. Das fängt CSV-Überraschungen (§1.1) dort ab, wo sie sonst als leeres Panel beim Nutzer landen.
+2. **Konsistenz Builder ↔ Validator.** Property-Test: Eine Folge zufälliger, vom UI angebotener Aktionen darf nie zu einer Liste führen, die der Validator (§5.1) als hart illegal ablehnt.
+3. **Geschwindigkeit.** Klick bis sichtbarer Regelteil unter 100 ms bei gefülltem Cache, als Playwright-Messung in CI.
+4. **Round-Trip.** Builder-Export → eigener Parser (§7) → identische `BuilderList`, fehlerfrei für 100 % der Beispiel-Listen.
+5. **Bedienbarkeit.** Panel per Tastatur erreichbar und mit `Esc` schließbar, Fokus wird gefangen und beim Schließen zurückgegeben, Katalog mit Pfeiltasten navigierbar, keine Information allein über Farbe kodiert.
+
+---
+
+## 7. Das größte technische Risiko: Listen-Parsing
 
 Turnierlisten kommen als Freitext aus mindestens vier Quellen (GW-App, New Recruit, BattleScribe, handgetippt) in unterschiedlichen Formaten, mit Tippfehlern, Spitznamen („Bricks", „Wraithlord x2"), fehlenden Punkten und abgeschnittenen Zeilen.
 
@@ -267,7 +385,7 @@ Strukturierte Formate (`.ros`/`.rosz`, New-Recruit-JSON) werden vorrangig gepars
 
 ---
 
-## 7. Technischer Stack
+## 8. Technischer Stack
 
 | Ebene | Wahl | Begründung |
 |---|---|---|
@@ -275,7 +393,7 @@ Strukturierte Formate (`.ros`/`.rosz`, New-Recruit-JSON) werden vorrangig gepars
 | DB | **PostgreSQL** (+ DuckDB für Analytics-Jobs) | JSONB für Bronze, relational für Silver, materialisierte Views für Gold |
 | Jobs/ETL | APScheduler oder Prefect, idempotent, mit `content_hash`-Dedupe | Nächtlicher Ingest + Recompute |
 | Cache/Queue | Redis | Rate-Limiting der Ingestion, teure Generator-Läufe |
-| Frontend | **Next.js + TypeScript + Tailwind + shadcn/ui**, TanStack Query | |
+| Frontend | **Next.js + TypeScript + Tailwind + shadcn/ui**, TanStack Query | Builder-State als Reducer mit IndexedDB-Persistenz (§6.5), Regel-Inspektor als Sheet/Drawer, `dnd-kit` für Leader- und Transport-Zuweisung |
 | Charts | Recharts oder visx | Matchup-Matrix als Heatmap, Trend-Linien mit CI-Bändern |
 | Deploy | Docker Compose → Fly.io/Hetzner, Postgres bei Neon/Supabase | |
 | Tests | pytest (Constraint-Validator + Parser mit echten Beispiel-Listen als Fixtures), Playwright für die kritischen UI-Flows | |
@@ -290,11 +408,17 @@ GET  /api/lists?faction=&placement=top8&since=
 POST /api/lists/validate      { list_text | roster_file }
 POST /api/lists/generate      { faction, detachment, points, locked_units[], style }
 POST /api/import/tournament   { csv | json }        # TO-/Manuell-Upload
+
+# Builder und Regel-Inspektor (§6.4)
+GET  /api/datasheets/{id}/card?ruleset=&mode=derived|full
+GET  /api/factions/{id}/cards?detachment=&ruleset=  # Bulk-Prefetch
+GET  /api/datasheets/{id}/context?list=             # Meta + Synergie im Listenkontext
+POST /api/lists/validate/incremental                { list, patch }
 ```
 
 ---
 
-## 8. Roadmap
+## 9. Roadmap
 
 | Phase | Inhalt | Ergebnis | Aufwand* |
 |---|---|---|---|
@@ -303,8 +427,9 @@ POST /api/import/tournament   { csv | json }        # TO-/Manuell-Upload
 | **2** | Listen-Parser + Einheiten-Statistik, Match-Rate-Dashboard | Einheiten-Ebene wird auswertbar | ~2 Wochen |
 | **3** | Skill-bereinigtes Modell (Bradley-Terry + Fraktionseffekt), Matchup-Matrix | Der eigentliche statistische Mehrwert | ~1,5 Wochen |
 | **4** | Constraint-Validator als eigener Service + Listen-Import/-Prüfung | „Ist meine Liste legal?" — eigenständig nützlich | ~1 Woche |
-| **5** | Synergie-Engine: Regel-Extraktion + empirisches Mining | Synergie-Explorer im UI | ~2,5 Wochen |
-| **6** | **Generator v1 (Assistent):** Rollenprofil, Lücken, Synergie-Hinweise, Restpunkte füllen | Der entschiedene v1-Funktionsumfang | ~2 Wochen |
+| **4b** | **Listenbuilder-Grundgerüst + Regel-Inspektor (§6.1–6.5):** `datasheet_card`-Read-Model, Panel mit Klick auf Einheit, Live-Validierung, legalitätsgefilterte Zuweisungen, Undo/Redo, Export | Regeln nachschlagbar und Listen baubar — **ohne eine einzige Turnierzeile** | ~2 Wochen |
+| **5** | Synergie-Engine: Regel-Extraktion + empirisches Mining | Synergie-Explorer im UI; liefert zugleich die Effekt-Tags für `RULES_TEXT_MODE=derived` (§6.3) | ~2,5 Wochen |
+| **6** | **Generator v1 (Assistent), im Builder:** Rollenprofil, Lücken, Synergie-Hinweise, Restpunkte füllen, Vorschläge als übernehmbarer Patch | Der entschiedene v1-Funktionsumfang | ~2 Wochen |
 | **7** | UI-Politur, Teilen/Export, Performance, Zugriffsschutz | **v1 ausgeliefert** | ~2 Wochen |
 | **8** | **Generator v2 (Vollautomatik):** Archetyp-Clustering, CP-SAT, Local Search, Diversifizierung | Listen aus dem Nichts | ~2,5 Wochen |
 
@@ -314,14 +439,20 @@ POST /api/import/tournament   { csv | json }        # TO-/Manuell-Upload
 
 Der Reihenfolge liegt eine Absicht zugrunde: Phase 4 zieht den Constraint-Validator **vor** die Synergie-Engine. Er ist die einzige Komponente, die beide Generator-Stufen zwingend brauchen, er ist vollständig aus Regeldaten baubar (unabhängig davon, wie die Turnierdatenfrage ausgeht) und er ist für sich allein schon ein benutzbares Feature.
 
+Aus demselben Grund sitzt der Listenbuilder als Phase 4b direkt dahinter und nicht bei der UI-Politur: Er braucht ausschließlich die Regel-DB aus Phase 0 und den Validator aus Phase 4 — **keine einzige Turnierzeile**. Sollte der Datenzugang aus §1.4 scheitern, bleibt damit trotzdem ein vollständiges, benutzbares Produkt übrig: ein Builder, der legale Listen erzwingt und die Regeln jeder Einheit auf Klick zeigt. Die Meta-Anreicherung des Inspektors (Abschnitt 11 in §6.2) schaltet sich später einfach dazu.
+
 ---
 
-## 9. Risiken und wie sie behandelt werden
+## 10. Risiken und wie sie behandelt werden
 
 | Risiko | Behandlung |
 |---|---|
 | **Turnierdaten-Zugang bricht weg** (ToS-Klausel, API-Änderung, Sperre) | `SourceAdapter`-Abstraktion; Manuell-Import von Tag 1; ToS-Prüfung als erste Aufgabe in Phase 1; Abschalter pro Quelle; parallel offizielle Anfrage |
 | **GW-IP / Regeltexte** | Keine Volltext-Regeln ausliefern, nur abgeleitete Tags + Deep-Links; Wahapedia-Attribution |
+| **Regel-Inspektor zeigt zu viel Regeltext** | `RULES_TEXT_MODE` mit Default `derived`: Werte + generierte Effekt-Tags + Deep-Link statt Volltext; `full` nur self-hosted und bestätigungspflichtig (§6.3) |
+| **Inspektor ist träge und wird deshalb nicht benutzt** | Denormalisiertes `datasheet_card`-Read-Model, Prefetch pro Fraktion, Kontextteile asynchron nachgeladen; 100-ms-Budget als CI-Test (§6.4, §6.7) |
+| **Builder bietet an, was der Validator ablehnt** | Eine gemeinsame Regelquelle und derselbe Reducer für Builder und Generator; Property-Test als Abnahmekriterium (§6.7) |
+| **Lückenhafte Wahapedia-Daten erzeugen leere Panel-Abschnitte** | Contract-Test über alle Datasheets vor Release; fehlende Daten als expliziter Zustand statt als leere Fläche (§6.7) |
 | **Listen-Parsing unter 90 %** | Alias-Tabelle als gepflegte Repo-Datei, Review-Queue, strukturierte Formate bevorzugen; Match-Rate sichtbar machen |
 | **Statistische Fehlschlüsse** (Confounds, kleine n) | Shrinkage, CIs, Mindest-n, skill-bereinigtes Modell, Einheiten-Stats nur innerhalb Fraktion+Detachment |
 | **Regel-/Punkte-Churn** | `ruleset_version` überall im Schlüssel; Auswertungsfenster an Dataslates ausgerichtet |
@@ -330,11 +461,11 @@ Der Reihenfolge liegt eine Absicht zugrunde: Phase 4 zieht den Constraint-Valida
 
 ---
 
-## 10. Noch offen
+## 11. Noch offen
 
 Nichts davon blockiert Phase 0 — aber Punkt 1 und 2 sollten vor Phase 1 geklärt sein, weil sie nachträglich teuer werden.
 
-1. **Zielgruppe:** Privates Werkzeug (self-hosted, kein Auth, Rechtsfragen weitgehend entschärft) oder öffentliche Web-App? Das ist bei der gewählten Scraping-Strategie der Unterschied zwischen „private Auswertung" und „Weiterveröffentlichung fremder Daten" — juristisch zwei verschiedene Dinge. Bis zur Klärung wird auf self-hosted hin gebaut; das ist die jederzeit erweiterbare Richtung.
+1. **Zielgruppe:** Privates Werkzeug (self-hosted, kein Auth, Rechtsfragen weitgehend entschärft) oder öffentliche Web-App? Das ist bei der gewählten Scraping-Strategie der Unterschied zwischen „private Auswertung" und „Weiterveröffentlichung fremder Daten" — juristisch zwei verschiedene Dinge. Bis zur Klärung wird auf self-hosted hin gebaut; das ist die jederzeit erweiterbare Richtung. **An derselben Antwort hängt `RULES_TEXT_MODE` (§6.3):** self-hosted erlaubt `full` und damit den vollwertigen Regel-Inspektor, eine öffentliche Instanz läuft auf `derived`. Der Schalter hält beide Wege offen, die Entscheidung selbst nimmt er niemandem ab.
 2. **Umfang:** Nur 40k, oder soll die Architektur Age of Sigmar gleich mittragen? Wahapedia exportiert beides. Ein `game_system`-Feld in Phase 0 mitzuziehen kostet fast nichts, es nachträglich einzuführen ist eine Schema-Migration durch alle Tabellen. **Default: Feld einbauen, nur 40k befüllen.**
 3. **Format-Fokus:** 2000 Pkt. GT/WTC als Standard gesetzt — sollen 1000 Pkt. und Combat Patrol als eigene Auswertungsfenster mitlaufen? (Das Datenmodell trägt es über `tournament.format` bereits.)
 
