@@ -52,6 +52,7 @@
   <div class="actions">
     <button id="undo" title="Rückgängig (Strg+Z)" aria-label="Rückgängig" disabled>↶</button>
     <button id="redo" title="Wiederholen (Strg+Y)" aria-label="Wiederholen" disabled>↷</button>
+    <button id="generate" title="Listenvorschlag">Vorschlag</button>
     <button id="export">Export</button>
   </div>
 </header>
@@ -132,6 +133,38 @@
            auf dem Telefon führe damit sofort die Bildschirmtastatur hoch. -->
       <button type="button" id="export-copy" autofocus>Kopieren</button>
       <button value="close">Schließen</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Der Vorschlag erscheint als Diff mit Übernehmen/Verwerfen (PLAN §6.1):
+     kein Moduswechsel, kein Neuladen, und Übernehmen läuft als ganz normaler
+     Patch durch den Reducer — damit hängt es an Undo wie jede Änderung. -->
+<dialog class="sheet-dialog gen-dialog" id="gen-dialog" aria-labelledby="gen-title">
+  <form method="dialog">
+    <h2 id="gen-title">Listenvorschlag</h2>
+
+    <div class="row gen-modes">
+      <label><input type="radio" name="gen-mode" value="fill" checked>
+        Restpunkte füllen</label>
+      <label><input type="radio" name="gen-mode" value="auto">
+        Komplett neu bauen</label>
+      <button type="button" id="gen-run">Erzeugen</button>
+    </div>
+
+    <p class="status" id="gen-status"></p>
+
+    <div id="gen-result" hidden>
+      <div id="gen-coverage" class="coverage"></div>
+      <div id="gen-diff" class="gen-diff"></div>
+      <p class="empty-note" id="gen-gaps"></p>
+      <p class="derived-hint" id="gen-evidence"></p>
+    </div>
+
+    <div class="row">
+      <span class="status" id="gen-points"></span>
+      <button type="button" id="gen-apply" disabled>Übernehmen</button>
+      <button value="close">Verwerfen</button>
     </div>
   </form>
 </dialog>

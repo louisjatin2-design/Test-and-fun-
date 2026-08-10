@@ -157,6 +157,57 @@ def test_kontext_endpunkt_ist_ehrlich_leer(client):
     assert "Phase" in data["reason"]
 
 
+def test_generate_baut_eine_liste(client):
+    """PLAN.md §8 — der Endpunkt, den der Generator aus §5 bedient."""
+    data = client.post("/api/lists/generate", json={
+        "list": {"faction_id": "TT", "points_limit": 1000, "entries": []},
+        "mode": "auto",
+    }).json()
+
+    assert data["list"]["entries"]
+    assert data["validation"]["legal"] is True
+    assert data["validation"]["points_used"] <= 1000
+    assert data["patch"] and data["picks"]
+    # Die Antwort trägt mit, worauf der Vorschlag beruht — und worauf nicht.
+    assert data["coverage"] and data["role_specs"]
+    assert "Phasen 1–3" in data["missing_evidence"]["meta"]
+
+
+def test_generate_fuellt_auf_ohne_bestehendes_anzufassen(client):
+    """Der Assistenten-Modus aus §5.3: gesperrter Kern, freier Rest."""
+    voll = client.post("/api/lists/generate", json={
+        "list": {"faction_id": "TT", "points_limit": 1000, "entries": []},
+        "mode": "auto",
+    }).json()
+    kern = voll["list"]["entries"][:1]
+
+    data = client.post("/api/lists/generate", json={
+        "list": {"faction_id": "TT", "points_limit": 1000, "entries": kern},
+        "mode": "fill",
+    }).json()
+
+    uids = {e["uid"] for e in data["list"]["entries"]}
+    assert all(e["uid"] in uids for e in kern)
+    assert not [a for a in data["patch"]
+                if a["type"] == "REMOVE_UNIT" and a["uid"] in {e["uid"] for e in kern}]
+
+
+def test_generate_lehnt_unbekannten_modus_ab(client):
+    response = client.post("/api/lists/generate", json={
+        "list": {"faction_id": "TT", "entries": []},
+        "mode": "irgendwas",
+    })
+    assert response.status_code == 400
+
+
+def test_generate_ohne_fraktion_sagt_das(client):
+    data = client.post("/api/lists/generate", json={
+        "list": {"entries": []}, "mode": "auto",
+    }).json()
+    assert data["list"]["entries"] == []
+    assert data["gaps"]
+
+
 def test_startseite_wird_ausgeliefert(client):
     response = client.get("/")
     assert response.status_code == 200

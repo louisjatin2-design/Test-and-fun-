@@ -530,6 +530,45 @@ table.stats td.nm, table.stats th.nm { text-align: left; }
 .sheet-dialog .row .status { color: var(--muted); font-size: 12px; flex: 1; min-width: 120px; }
 .sheet-dialog .row button { min-height: var(--touch); }
 
+/* -------------------------------------------------------------- Vorschlag */
+.gen-dialog { width: min(680px, calc(100vw - 24px)); }
+.gen-modes { gap: 14px; }
+.gen-modes label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.gen-modes button { margin-left: auto; border-color: var(--accent); color: var(--accent); }
+
+/* Die Abdeckung je Rolle — das, was der Generator maximiert, sichtbar
+   gemacht. Ohne sie ist jeder Vorschlag eine Blackbox (PLAN §5.5). */
+.coverage { display: grid; gap: 5px; margin-bottom: 12px; }
+.cov-row { display: grid; grid-template-columns: 116px 1fr 44px; gap: 8px; align-items: center; }
+.cov-row .lbl { font-size: 11.5px; color: var(--muted); }
+.cov-row .bar { height: 7px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.cov-row .bar span { display: block; height: 100%; background: var(--ok); }
+.cov-row.thin .bar span { background: var(--warning); }
+.cov-row .val { font-size: 11.5px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+.gen-diff {
+  max-height: 34dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  background: var(--bg);
+}
+.gen-line { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.gen-line:last-child { border-bottom: none; }
+.gen-line .sign { color: var(--ok); font-weight: 600; flex: none; }
+.gen-line.remove .sign { color: var(--error); }
+.gen-line .nm { font-weight: 500; }
+.gen-line .why { flex: 1; font-size: 11.5px; color: var(--muted); }
+.gen-line .pts { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+
 /* ----------------------------------------------------------------- Misc */
 .empty {
   position: fixed;

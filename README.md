@@ -8,7 +8,7 @@ Der Umsetzungsplan — Datenquellen, Datenmodell, Ranking-Methodik, Synergie-Erk
 
 ## Status
 
-**Phase 0, 4 und 4b sind gebaut** — der Teil, der ohne Turnierdaten auskommt:
+**Phase 0, 4, 4b und der regelbasierte Teil von 6 sind gebaut** — alles, was ohne Turnierdaten auskommt:
 
 | | Was läuft |
 |---|---|
@@ -19,8 +19,44 @@ Der Umsetzungsplan — Datenquellen, Datenmodell, Ranking-Methodik, Synergie-Erk
 | **Live-Updates** | Erkennt neue Wahapedia-Stände im Betrieb, lädt sie nach und meldet sie offenen Browsern — ohne Neustart |
 | **Offline-Datei** | `build_offline.py` erzeugt eine eigenständige HTML-Datei mit Daten und Regel-Engine — läuft ohne Server auf jedem Telefon |
 | **Auf jedem Gerät** | Eine Oberfläche für PC, iPad, iPhone und Android: drei Spalten, zwei Spalten oder Reiter — je nach Platz. Installierbar als App |
+| **Listen-Generator** | Baut eine Liste aus Fraktion + Punktelimit oder füllt die Restpunkte einer bestehenden auf — legal, ausgewogen, mit Begründung je Einheit |
 
-Noch offen: Turnierdaten-Ingestion (Phase 1–3), Synergie-Engine (Phase 5), Generator (Phase 6/8). Der Meta-Abschnitt im Inspektor ist dafür vorbereitet und meldet bis dahin ehrlich „noch keine Daten".
+Noch offen: Turnierdaten-Ingestion (Phase 1–3) und die Synergie-Engine (Phase 5). Der Meta-Abschnitt im Inspektor ist dafür vorbereitet und meldet bis dahin ehrlich „noch keine Daten".
+
+## Der Listen-Generator
+
+Knopf **Vorschlag** in der Kopfzeile, zwei Betriebsarten aus [`PLAN.md` §5.3](PLAN.md):
+
+| | |
+|---|---|
+| **Restpunkte füllen** | Die vorhandene Liste bleibt unangetastet, gefüllt wird nur der Rest — „fülle mir die letzten 240 Punkte". Der Alltagsfall. |
+| **Komplett neu bauen** | Fraktion und Punktelimit genügen. |
+
+Das Ergebnis erscheint als **Diff mit Übernehmen/Verwerfen**, nicht als fertige Tatsache. Übernehmen läuft als ganz normaler Patch durch denselben Reducer wie jeder Klick im Builder — der ganze Vorschlag hängt damit als *ein* Schritt an Undo.
+
+### Wonach er entscheidet
+
+Harte Regeln sind nicht verhandelbar: Jeder Zwischenstand läuft durch denselben Validator wie der Builder, ein Vorschlag mit Regelbruch wird gar nicht erst gemacht. Darüber liegt die **Rollenabdeckung** aus §5.2 — für jede Einheit wird aus den Waffenprofilen der erwartete Schaden gegen drei Zielarchetypen gerechnet:
+
+| Rolle | Zielprofil |
+|---|---|
+| Anti-Tank | T10, Sv2+, W12 |
+| Anti-Elite | T5, Sv2+, 4++, W3 |
+| Anti-Horde | T3, Sv5+, W1 (Überschussschaden verfällt, wie im Spiel) |
+| Haltbarkeit | effektive Lebenspunkte gegen einen Referenzangriff S4/AP-1 |
+| Objective Control | Summe der OC-Werte |
+
+Die Zielhöhe je Rolle richtet sich nach der **medianen Effizienz der jeweiligen Fraktion** — eine absolute Zahl wäre für Custodes und Guardsmen gleichermaßen falsch. Erfüllte Rollen zählen nur noch anteilig weiter, damit der nächste Griff in die Lücke geht statt in die vierte Panzerabwehr.
+
+Modelliert sind Torrent, Twin-linked, Sustained Hits, Lethal Hits, Devastating Wounds, Anti-X und Blast. Nicht modelliert sind Rapid Fire, Melta, Heavy und Indirect Fire: Sie hängen an Entfernung und Spielsituation und wären aus einem statischen Profil geraten, nicht gerechnet — deshalb bleiben sie draußen und stehen in der Antwort unter `missing_evidence`.
+
+### Was er nicht kann, sagt er
+
+[`PLAN.md` §5.4](PLAN.md) sieht Archetyp-Seeding aus echten Turnierlisten und einen Meta-Prior je Einheit vor. Beides braucht die Turnierauswertung aus den Phasen 1–3. Bis dahin beruht jeder Vorschlag **allein auf Regel- und Profildaten**, und genau das steht im Dialog. Drei der neun Rollen aus §5.2 — Screening, Board Control, Secondary-Scoring — hängen davon ab, wie eine Einheit *gespielt* wird, und werden gar nicht erst geschätzt: Eine erfundene Zahl ginge in die Bewertung ein, ohne dass jemand sie prüfen könnte.
+
+Die Stellschrauben der Zielfunktion sind gesetzt, nicht belegt. Sie stehen gesammelt oben in `app/rules/generator.py`, jede mit Begründung — und die Zielhöhen wurden gemessen statt geraten: Beim ersten Ansatz erreichte eine volle Liste das Fünf- bis Neunfache des Ziels, war also nach einem Drittel des Budgets gesättigt und der Rest der Liste beliebig. Das Verfahren ist wiederholbar; wer die Gewichte ändert, misst neu.
+
+**Nur mit Server.** Die Offline-Datei blendet den Knopf aus. Den Generator ein zweites Mal in JavaScript zu bauen hieße, Zielfunktion und Suche doppelt zu pflegen — dieselbe Doppelung, die bei Reducer und Validator nur deshalb tragbar ist, weil `tests/test_parity.py` sie Zeile für Zeile gegeneinander hält.
 
 ## Loslegen
 
@@ -29,6 +65,16 @@ pip install -e .              # oder: pip install fastapi uvicorn sqlalchemy htt
 python -m app.etl.wahapedia   # lädt den Wahapedia-Export (~30 s)
 uvicorn app.api.main:app      # http://127.0.0.1:8000
 ```
+
+Unter **Windows** in der Eingabeaufforderung — `uvicorn` liegt dort oft nicht im PATH, und Umgebungsvariablen brauchen eine eigene Zeile:
+
+```bat
+python -m pip install -e .
+python -m app.etl.wahapedia
+python -m uvicorn app.api.main:app
+```
+
+Das Fenster muss offen bleiben, es *ist* der Server; beenden mit `Strg+C`. Beim Installieren von Python muss der Haken **„Add python.exe to PATH"** gesetzt sein, sonst findet `cmd` den Befehl nicht.
 
 Der ETL legt `data/warhammer_meta.sqlite3` an. Ohne Netz geht es auch aus einem Verzeichnis mit den CSVs:
 
@@ -59,6 +105,13 @@ Die App läuft auf deinem Rechner; das Tablet oder Telefon ruft sie über das he
 
 ```bash
 WH_BIND_HOST=0.0.0.0 uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+```
+
+Unter Windows gilt dieselbe Zeile nicht — dort setzt `set` die Variable, und zwar in einer eigenen Zeile davor:
+
+```bat
+set WH_BIND_HOST=0.0.0.0
+python -m uvicorn app.api.main:app --host 0.0.0.0 --port 8000
 ```
 
 **2. IP-Adresse des Rechners herausfinden:**
@@ -139,7 +192,7 @@ Ein `python -m app.etl.wahapedia` von Hand wird ebenfalls bemerkt: Maßgeblich i
 pytest
 ```
 
-205 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
+249 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
 
 ## Aufbau
 
@@ -154,6 +207,8 @@ app/
   rules/ruleset.py     Regelkonstanten, jede mit Herkunft: DATA oder ASSUMPTION
   rules/builderlist.py Listendokument + Reducer
   rules/validator.py   Constraint-Validator
+  rules/roleprofile.py Rollenprofil je Einheit aus Waffen- und Profilwerten
+  rules/generator.py   Listen-Generator: Assistent und Vollautomatik
   live.py              Datenstand-Zähler für Live-Updates
   etl/updates.py       Update-Erkennung und -Übernahme
   api/main.py          FastAPI inkl. SSE-Stream

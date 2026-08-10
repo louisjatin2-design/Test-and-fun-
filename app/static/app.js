@@ -81,6 +81,10 @@ function serverBackend() {
       method: "POST", body: JSON.stringify({ list, patch }),
     }),
     unitContext: (id) => api(`/api/datasheets/${encodeURIComponent(id)}/context`),
+    canGenerate: true,
+    generate: (list, mode) => api("/api/lists/generate", {
+      method: "POST", body: JSON.stringify({ list, mode }),
+    }),
     subscribe(onChange) {
       if (typeof EventSource === "undefined") return;
       const source = new EventSource("/api/events");
@@ -140,6 +144,12 @@ function offlineBackend() {
       datasheet_id: id, available: false, synergies: [],
       reason: data.meta.context_reason,
     }),
+    // Der Generator läuft auf dem Server. Ihn ein zweites Mal in JavaScript
+    // zu bauen hieße, Zielfunktion und Suche doppelt zu pflegen — dieselbe
+    // Doppelung, die bei Reducer und Validator nur deshalb tragbar ist,
+    // weil tests/test_parity.py sie Zeile für Zeile gegeneinander hält.
+    // Statt eines zweiten, ungeprüften Generators steht hier ehrlich nichts.
+    canGenerate: false,
     // Ohne Server gibt es keinen neuen Regelstand zu melden. Eine neue
     // Offline-Datei ist ein neuer Download, kein Live-Update.
     subscribe() {},
@@ -268,6 +278,10 @@ async function init() {
     return;
   }
 
+  // Ohne Server kein Generator — der Knopf verschwindet, statt tot
+  // dazustehen. Die Offline-Datei sagt im Übrigen selbst, was sie ist.
+  if (!backend.canGenerate) $("generate").hidden = true;
+
   const limits = $("points-limit");
   for (const limit of state.meta.points_limits) {
     limits.append(new Option(`${limit} Pkt.`, limit));
@@ -360,6 +374,7 @@ function wireEvents() {
   $("tab-army").addEventListener("click", () => selectTab("army"));
 
   wireExport();
+  wireGenerator();
 
   // Vom Hoch- ins Querformat gedreht kann aus dem Sheet eine Spalte werden
   // (und umgekehrt). Dann muss die Abdeckung mitziehen, sonst bleibt ein
@@ -1104,6 +1119,131 @@ function exportText() {
       ` (${points})${extras.length ? ` [${extras.join(", ")}]` : ""}`);
   }
   return lines.join("\n");
+}
+
+// --------------------------------------------------------------- Vorschlag
+// PLAN.md §5.3 und §6.1: Der Generator schlägt vor, der Nutzer entscheidet.
+// Der Vorschlag kommt als Patch — dieselben Aktionen, die auch jeder Klick
+// im Builder erzeugt. Daraus folgt zweierlei ohne weiteres Zutun: Der Diff
+// ist anzeigbar, bevor irgendetwas passiert, und "Übernehmen" landet als
+// *ein* Schritt in der Historie, ist also mit Strg+Z zurückzunehmen.
+
+/** Der zuletzt erzeugte, noch nicht übernommene Vorschlag. */
+let pendingProposal = null;
+
+function wireGenerator() {
+  const dialog = $("gen-dialog");
+
+  $("generate").addEventListener("click", () => {
+    pendingProposal = null;
+    $("gen-result").hidden = true;
+    $("gen-apply").disabled = true;
+    $("gen-points").textContent = "";
+    $("gen-status").textContent = state.list.faction_id
+      ? ""
+      : "Erst eine Fraktion wählen — ohne sie gibt es nichts vorzuschlagen.";
+    dialog.showModal();
+  });
+
+  $("gen-run").addEventListener("click", runGenerator);
+  $("gen-apply").addEventListener("click", async () => {
+    if (!pendingProposal?.patch?.length) return;
+    dialog.close();
+    await dispatch(...pendingProposal.patch);
+    pendingProposal = null;
+    // Auf dem Telefon liegt die Liste im anderen Reiter. Wer gerade 25
+    // Einheiten übernommen hat, will sie sehen und nicht den Katalog.
+    selectTab("army");
+  });
+
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+}
+
+async function runGenerator() {
+  const mode = document.querySelector('input[name="gen-mode"]:checked').value;
+  const run = $("gen-run");
+  run.disabled = true;
+  $("gen-status").textContent = "Wird gerechnet …";
+
+  try {
+    const result = await backend.generate(state.list, mode);
+    pendingProposal = result;
+    renderProposal(result);
+  } catch (error) {
+    console.error(error);
+    $("gen-status").textContent = `Vorschlag fehlgeschlagen — ${error.message}`;
+    $("gen-result").hidden = true;
+    $("gen-apply").disabled = true;
+  } finally {
+    run.disabled = false;
+  }
+}
+
+function renderProposal(result) {
+  // Nur Entfernungen zählen, die *bestehende* Einträge treffen. Die lokale
+  // Suche tauscht ihre eigenen Griffe wieder aus (Entfernen + Hinzufügen);
+  // die als „ersetzt" zu melden, wäre bei leerer Startliste schlicht falsch.
+  const bestehende = new Set(state.list.entries.map((entry) => entry.uid));
+  const removed = result.patch.filter(
+    (action) => action.type === "REMOVE_UNIT" && bestehende.has(action.uid)).length;
+
+  $("gen-status").textContent =
+    `${result.list.entries.length} Einheiten im Vorschlag` +
+    (removed ? ` · ${removed} bestehende werden ersetzt` : "") + ".";
+
+  // Abdeckung: das, was der Generator maximiert hat.
+  const coverage = $("gen-coverage");
+  coverage.innerHTML = "";
+  const titel = Object.fromEntries(
+    (result.role_specs ?? []).map((spec) => [spec.key, spec.title]));
+  for (const [key, value] of Object.entries(result.coverage ?? {})) {
+    const row = document.createElement("div");
+    row.className = "cov-row" + (value < 0.85 ? " thin" : "");
+    row.innerHTML =
+      `<span class="lbl">${escapeHtml(titel[key] ?? key)}</span>` +
+      `<span class="bar"><span style="width:${Math.round(value * 100)}%"></span></span>` +
+      `<span class="val">${Math.round(value * 100)} %</span>`;
+    coverage.append(row);
+  }
+
+  // Der Diff, Zeile für Zeile mit Begründung (§5.5).
+  const diff = $("gen-diff");
+  diff.innerHTML = "";
+  if (removed) {
+    const row = document.createElement("div");
+    row.className = "gen-line remove";
+    row.innerHTML = `<span class="sign">−</span><span class="why">` +
+      `${removed} bestehende ${removed === 1 ? "Einheit wird" : "Einheiten werden"} ` +
+      "entfernt und neu aufgebaut.</span>";
+    diff.append(row);
+  }
+  for (const pick of result.picks ?? []) {
+    const row = document.createElement("div");
+    row.className = "gen-line";
+    row.innerHTML =
+      '<span class="sign">+</span>' +
+      `<span class="nm">${pick.model_count}× ${escapeHtml(pick.name)}</span>` +
+      `<span class="why">${escapeHtml(pick.reason)}</span>` +
+      `<span class="pts">${pick.cost ? `${pick.cost}` : "–"}</span>`;
+    diff.append(row);
+  }
+
+  $("gen-gaps").textContent = (result.gaps ?? []).length
+    ? `Bleibt offen: ${result.gaps.join(" · ")}`
+    : "";
+
+  // Was der Vorschlag *nicht* weiß, steht dabei — sonst ist er eine
+  // Blackbox, der niemand trauen sollte (§5.5).
+  $("gen-evidence").textContent = result.missing_evidence?.meta ?? "";
+
+  const validation = result.validation ?? {};
+  $("gen-points").textContent =
+    `${validation.points_used} / ${validation.points_limit} Punkte · ` +
+    (validation.legal ? "legal" : `${validation.errors} Regelbruch`);
+  $("gen-result").hidden = false;
+  $("gen-apply").disabled = !result.patch?.length;
 }
 
 // ------------------------------------------------------------ Live-Updates

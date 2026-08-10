@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app import config, db, derive, live, models
-from app.rules import ruleset
+from app.rules import generator, ruleset
 from app.rules.builderlist import ActionError, BuilderList, apply_all
 from app.rules.validator import RulesContext, validate
 
@@ -134,6 +134,13 @@ class ValidateRequest(BaseModel):
 class IncrementalRequest(BaseModel):
     list: dict[str, Any]
     patch: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class GenerateRequest(BaseModel):
+    list: dict[str, Any]
+    #: ``fill`` behält die vorhandenen Einträge (PLAN §5.3 v1, Assistent),
+    #: ``auto`` beginnt bei null (v2, Vollautomatik).
+    mode: str = "fill"
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +382,34 @@ def validate_incremental(request: IncrementalRequest) -> dict:
     with db.session() as session:
         result = validate(state, session, _context(session, state.ruleset_version))
     return {"list": state.to_dict(), "validation": result.to_dict()}
+
+
+@app.post("/api/lists/generate")
+def generate_list(request: GenerateRequest) -> dict:
+    """Listenvorschlag — PLAN.md §8, Generator aus §5.
+
+    Zwei Betriebsarten hinter einem Endpunkt, wie in §5.3 vorgesehen:
+    ``fill`` füllt die mitgeschickte Liste auf, ``auto`` baut von null.
+
+    Die Antwort enthält neben der fertigen Liste den ``patch`` — dieselben
+    Aktionen, die auch der Builder schickt. Damit ist der Vorschlag im UI
+    ein übernehmbarer Diff und kein Moduswechsel (§6.1).
+    """
+    if request.mode not in {"fill", "auto"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unbekannter Modus {request.mode!r}. Erlaubt: fill, auto.",
+        )
+
+    state = BuilderList.from_dict(request.list)
+    with db.session() as session:
+        result = generator.generate(
+            session,
+            state,
+            _context(session, state.ruleset_version),
+            keep_existing=request.mode == "fill",
+        )
+    return result.to_dict()
 
 
 @app.get("/api/datasheets/{datasheet_id}/context")
