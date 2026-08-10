@@ -2,7 +2,13 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- viewport-fit=cover: Der Inhalt reicht bis unter Notch und Home-Indikator;
+     die sicheren Ränder holt das CSS über env(safe-area-inset-*) zurück.
+     interactive-widget: Android verkleinert damit das Layout, sobald die
+     Bildschirmtastatur aufgeht — sonst liegt die untere Hälfte der App
+     dahinter, während man ins Suchfeld tippt. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="color-scheme" content="dark">
 <!-- "Zum Home-Bildschirm" auf iOS/Android: startet ohne Browserleiste. -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -11,6 +17,11 @@
 <meta name="theme-color" content="#1c1f26">
 <title>warhammer-meta · Listenbuilder</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⚔</text></svg>">
+<!-- iOS nimmt für den Home-Bildschirm kein SVG und ignoriert das Manifest;
+     ohne dieses PNG legt Safari ein Bildschirmfoto der Seite als Symbol ab. -->
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<!-- Chrome auf Android bietet "App installieren" erst mit Manifest an. -->
+<link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -39,8 +50,9 @@
   </div>
 
   <div class="actions">
-    <button id="undo" title="Rückgängig (Strg+Z)" disabled>↶</button>
-    <button id="redo" title="Wiederholen (Strg+Y)" disabled>↷</button>
+    <button id="undo" title="Rückgängig (Strg+Z)" aria-label="Rückgängig" disabled>↶</button>
+    <button id="redo" title="Wiederholen (Strg+Y)" aria-label="Wiederholen" disabled>↷</button>
+    <button id="generate" title="Listenvorschlag">Vorschlag</button>
     <button id="export">Export</button>
   </div>
 </header>
@@ -48,14 +60,24 @@
 <div id="update-banner" class="banner" hidden>
   <span id="update-text"></span>
   <button id="update-apply">Übernehmen</button>
-  <button id="update-dismiss" title="Später">✕</button>
+  <button id="update-dismiss" title="Später" aria-label="Später">✕</button>
 </div>
 
-<main>
-  <section class="catalog" aria-label="Einheitenkatalog">
+<!-- Nur auf dem Telefon sichtbar; dort stehen Katalog und Liste nicht
+     nebeneinander, sondern wechseln sich ab. -->
+<nav class="tabs" id="tabs" role="tablist" aria-label="Ansicht">
+  <button type="button" id="tab-catalog" role="tab" aria-selected="true"
+          aria-controls="panel-catalog">Katalog</button>
+  <button type="button" id="tab-army" role="tab" aria-selected="false"
+          aria-controls="panel-army">Liste <span class="count" id="tab-count">0</span></button>
+</nav>
+
+<main class="show-catalog">
+  <section class="catalog" id="panel-catalog" role="tabpanel"
+           aria-labelledby="tab-catalog" aria-label="Einheitenkatalog">
     <div class="catalog-head">
       <input id="search" type="search" placeholder="Einheit suchen …" autocomplete="off">
-      <select id="sort">
+      <select id="sort" aria-label="Sortierung">
         <option value="name">Name</option>
         <option value="points">Punkte</option>
         <option value="role">Rolle</option>
@@ -64,7 +86,8 @@
     <div id="catalog-list" class="scroll"></div>
   </section>
 
-  <section class="army" aria-label="Armeeliste">
+  <section class="army" id="panel-army" role="tabpanel"
+           aria-labelledby="tab-army" aria-label="Armeeliste">
     <div class="army-head">
       <input id="list-name" value="Neue Liste" aria-label="Listenname">
       <span id="legal-badge" class="badge"></span>
@@ -73,7 +96,13 @@
     <div id="findings"></div>
   </section>
 
+  <!-- Liegt der Inspektor als Sheet über der Liste, fängt diese Fläche alles
+       ab, was daneben passiert: Ein Tipp schließt, Wischen geht nicht durch.
+       Sie ist `position: fixed` und belegt darum keine Gitterspalte. -->
+  <div id="sheet-backdrop" class="sheet-backdrop" hidden></div>
+
   <aside class="inspector" id="inspector" aria-label="Regel-Inspektor" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
     <div class="inspector-head">
       <div>
         <h2 id="insp-name"></h2>
@@ -81,13 +110,64 @@
       </div>
       <div class="inspector-buttons">
         <button id="insp-pin" title="Angeheftet lassen" aria-pressed="false">📌</button>
-        <button id="insp-close" title="Schließen (Esc)">✕</button>
+        <button id="insp-close" title="Schließen (Esc)" aria-label="Schließen">✕</button>
       </div>
     </div>
     <div id="insp-body" class="scroll"></div>
     <footer class="inspector-foot" id="insp-foot"></footer>
   </aside>
 </main>
+
+<!-- Export als Dialog statt als alert(): Ohne HTTPS gibt es auf dem Telefon
+     keine Zwischenablage-API (siehe app.js), und aus einem alert() lässt
+     sich nichts markieren. Aus einem Textfeld schon. -->
+<dialog class="sheet-dialog" id="export-dialog" aria-labelledby="export-title">
+  <form method="dialog">
+    <h2 id="export-title">Liste exportieren</h2>
+    <textarea id="export-text" aria-label="Listentext" spellcheck="false"></textarea>
+    <div class="row">
+      <span class="status" id="export-status"></span>
+      <button type="button" id="export-share" hidden>Teilen</button>
+      <!-- `autofocus` gehört bewusst hierher und nicht auf das Textfeld:
+           `showModal()` fokussiert sonst das erste bedienbare Element, und
+           auf dem Telefon führe damit sofort die Bildschirmtastatur hoch. -->
+      <button type="button" id="export-copy" autofocus>Kopieren</button>
+      <button value="close">Schließen</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Der Vorschlag erscheint als Diff mit Übernehmen/Verwerfen (PLAN §6.1):
+     kein Moduswechsel, kein Neuladen, und Übernehmen läuft als ganz normaler
+     Patch durch den Reducer — damit hängt es an Undo wie jede Änderung. -->
+<dialog class="sheet-dialog gen-dialog" id="gen-dialog" aria-labelledby="gen-title">
+  <form method="dialog">
+    <h2 id="gen-title">Listenvorschlag</h2>
+
+    <div class="row gen-modes">
+      <label><input type="radio" name="gen-mode" value="fill" checked>
+        Restpunkte füllen</label>
+      <label><input type="radio" name="gen-mode" value="auto">
+        Komplett neu bauen</label>
+      <button type="button" id="gen-run">Erzeugen</button>
+    </div>
+
+    <p class="status" id="gen-status"></p>
+
+    <div id="gen-result" hidden>
+      <div id="gen-coverage" class="coverage"></div>
+      <div id="gen-diff" class="gen-diff"></div>
+      <p class="empty-note" id="gen-gaps"></p>
+      <p class="derived-hint" id="gen-evidence"></p>
+    </div>
+
+    <div class="row">
+      <span class="status" id="gen-points"></span>
+      <button type="button" id="gen-apply" disabled>Übernehmen</button>
+      <button value="close">Verwerfen</button>
+    </div>
+  </form>
+</dialog>
 
 <div id="empty-state" class="empty">
   <h1>Keine Regeldaten geladen</h1>

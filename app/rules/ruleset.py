@@ -142,7 +142,13 @@ def as_dict() -> dict:
     führen. Die Logik gibt es dadurch zweimal (unvermeidbar ohne Server),
     die Zahlen aber weiterhin nur einmal.
     """
+    from app import config
+
     return {
+        # Der Regelstand gehört dazu: Die Browser-Engine normalisiert Listen
+        # damit, und ohne ihn stünde die Version einmal hier und einmal im
+        # Aufrufer.
+        "ruleset_version": config.RULESET_VERSION,
         "max_same_datasheet": MAX_SAME_DATASHEET,
         "max_same_datasheet_battleline": MAX_SAME_DATASHEET_BATTLELINE,
         "battleline_roles": sorted(BATTLELINE_ROLES),

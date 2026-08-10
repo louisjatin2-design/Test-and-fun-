@@ -1,9 +1,15 @@
 /**
  * Treibt die Browser-Engine für den Parity-Test.
  *
- * Liest {ruleset, cards, enhancements, list, patch} von stdin, wendet die
- * Aktionen an, validiert und gibt {list, validation} auf stdout aus — genau
- * das, was `/api/lists/validate/incremental` serverseitig liefert.
+ * Zwei Betriebsarten, je nach Eingabe auf stdin:
+ *
+ *   {ruleset, cards, enhancements, list, patch}
+ *       wendet die Aktionen an und validiert — also das, was
+ *       `/api/lists/validate/incremental` serverseitig liefert.
+ *
+ *   {ruleset, cards, enhancements, list, generate: {config, keep_existing}}
+ *       lässt den Browser-Generator eine Liste bauen — das Gegenstück zu
+ *       `/api/lists/generate`.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -24,14 +30,20 @@ const ctx = R.buildContext({
   ruleset: input.ruleset,
 });
 
-let state = R.normaliseList(input.list, input.ruleset.ruleset_version);
-let error = null;
-try {
-  state = R.applyAll(state, input.patch ?? []);
-} catch (exc) {
-  error = String(exc.message ?? exc);
-}
+if (input.generate) {
+  const ergebnis = R.generate(
+    input.list, ctx, input.generate.config, input.generate.keep_existing);
+  process.stdout.write(JSON.stringify(ergebnis));
+} else {
+  let state = R.normaliseList(input.list, input.ruleset.ruleset_version);
+  let error = null;
+  try {
+    state = R.applyAll(state, input.patch ?? []);
+  } catch (exc) {
+    error = String(exc.message ?? exc);
+  }
 
-process.stdout.write(JSON.stringify(
-  error ? { error } : { list: state, validation: R.validate(state, ctx) },
-));
+  process.stdout.write(JSON.stringify(
+    error ? { error } : { list: state, validation: R.validate(state, ctx) },
+  ));
+}

@@ -150,11 +150,87 @@ def test_incremental_meldet_kaputte_aktion(client):
     assert response.status_code == 400
 
 
-def test_kontext_endpunkt_ist_ehrlich_leer(client):
-    """Abschnitt 11 braucht Turnierdaten, die es noch nicht gibt."""
+def test_kontext_trennt_regel_und_turnierwissen(client):
+    """Abschnitt 11 — die beiden Signalfamilien aus §4 getrennt.
+
+    Die regelbasierte Hälfte (§4.1) braucht nur Regeldaten und ist da. Die
+    empirische (§4.2) und die Meta-Zahlen (§3) brauchen Turnierlisten und
+    fehlen. §4 verlangt genau diese Trennung: zusammengerührt ließe sich
+    nicht mehr sagen, *warum* etwas empfohlen wurde.
+    """
     data = client.get("/api/datasheets/DS001/context").json()
-    assert data["available"] is False
-    assert "Phase" in data["reason"]
+
+    assert data["rules_based"]["available"] is True
+    assert data["rules_based"]["synergies"]
+    assert data["empirical"]["available"] is False
+    assert "Phasen 1–3" in data["empirical"]["reason"]
+
+
+def test_synergien_tragen_ihre_herkunft(client):
+    """Belegtes und Abgeleitetes dürfen nicht gleich aussehen."""
+    data = client.get("/api/datasheets/DS001/synergies").json()
+
+    assert data["available"] is True
+    anschluss = [s for s in data["synergies"] if s["kind"] == "leader_attach"]
+    assert anschluss, "Der Anschluss aus Datasheets_leader fehlt"
+    assert anschluss[0]["basis"] == "DATA"
+    assert anschluss[0]["explanation"]
+    assert "§4.2" in data["missing"]["empirisch"]
+
+
+def test_synergien_unbekanntes_datasheet(client):
+    assert client.get("/api/datasheets/gibtsnicht/synergies").status_code == 404
+
+
+def test_generate_baut_eine_liste(client):
+    """PLAN.md §8 — der Endpunkt, den der Generator aus §5 bedient."""
+    data = client.post("/api/lists/generate", json={
+        "list": {"faction_id": "TT", "points_limit": 1000, "entries": []},
+        "mode": "auto",
+    }).json()
+
+    assert data["list"]["entries"]
+    assert data["validation"]["legal"] is True
+    assert data["validation"]["points_used"] <= 1000
+    assert data["patch"] and data["picks"]
+    # Die Antwort trägt mit, worauf der Vorschlag beruht — und worauf nicht.
+    assert data["coverage"] and data["role_specs"]
+    assert "Phasen 1–3" in data["missing_evidence"]["meta"]
+
+
+def test_generate_fuellt_auf_ohne_bestehendes_anzufassen(client):
+    """Der Assistenten-Modus aus §5.3: gesperrter Kern, freier Rest."""
+    voll = client.post("/api/lists/generate", json={
+        "list": {"faction_id": "TT", "points_limit": 1000, "entries": []},
+        "mode": "auto",
+    }).json()
+    kern = voll["list"]["entries"][:1]
+
+    data = client.post("/api/lists/generate", json={
+        "list": {"faction_id": "TT", "points_limit": 1000, "entries": kern},
+        "mode": "fill",
+    }).json()
+
+    uids = {e["uid"] for e in data["list"]["entries"]}
+    assert all(e["uid"] in uids for e in kern)
+    assert not [a for a in data["patch"]
+                if a["type"] == "REMOVE_UNIT" and a["uid"] in {e["uid"] for e in kern}]
+
+
+def test_generate_lehnt_unbekannten_modus_ab(client):
+    response = client.post("/api/lists/generate", json={
+        "list": {"faction_id": "TT", "entries": []},
+        "mode": "irgendwas",
+    })
+    assert response.status_code == 400
+
+
+def test_generate_ohne_fraktion_sagt_das(client):
+    data = client.post("/api/lists/generate", json={
+        "list": {"entries": []}, "mode": "auto",
+    }).json()
+    assert data["list"]["entries"] == []
+    assert data["gaps"]
 
 
 def test_startseite_wird_ausgeliefert(client):

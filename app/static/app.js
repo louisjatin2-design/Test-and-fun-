@@ -35,6 +35,25 @@ let backend;
 
 const $ = (id) => document.getElementById(id);
 
+// ------------------------------------------------------------- Eingabegerät
+// Zwei Fragen, die das Verhalten ändern, und beide sind zur Laufzeit
+// veränderlich: Ein iPad bekommt eine Tastatur mit Trackpad angesteckt, ein
+// Fenster wird schmaler gezogen. Sie werden deshalb bei jedem Zugriff neu
+// beantwortet, nicht einmal beim Start.
+
+/** Gibt es einen Zeiger, der über etwas schweben kann, ohne zu klicken? */
+const canHover = () =>
+  window.matchMedia?.("(hover: hover)").matches ?? true;
+
+/**
+ * Liegt der Inspektor als Sheet über der Liste, statt eine eigene Spalte zu
+ * sein? Die Antwort steht im Stylesheet — dort entscheidet die Breite. Hier
+ * wird sie nur abgelesen, damit Breakpoint und Verhalten nicht mit der Zeit
+ * auseinanderlaufen.
+ */
+const sheetMode = () =>
+  getComputedStyle($("inspector")).position === "fixed";
+
 // ------------------------------------------------------------------ Backend
 // Zwei Betriebsarten hinter einer Schnittstelle:
 //
@@ -62,6 +81,10 @@ function serverBackend() {
       method: "POST", body: JSON.stringify({ list, patch }),
     }),
     unitContext: (id) => api(`/api/datasheets/${encodeURIComponent(id)}/context`),
+    canGenerate: true,
+    generate: (list, mode) => api("/api/lists/generate", {
+      method: "POST", body: JSON.stringify({ list, mode }),
+    }),
     subscribe(onChange) {
       if (typeof EventSource === "undefined") return;
       const source = new EventSource("/api/events");
@@ -117,10 +140,34 @@ function offlineBackend() {
       const next = WHRules.applyAll(start, patch);
       return { list: next, validation: check(next) };
     },
-    unitContext: async (id) => ({
-      datasheet_id: id, available: false, synergies: [],
-      reason: data.meta.context_reason,
-    }),
+    // Die regelbasierte Synergie (§4.1) ist vorgerechnet und liegt als
+    // Daten in der Datei — sie hängt nur an den Regeln, nicht am Server.
+    unitContext: async (id) => {
+      const faction = state.list.faction_id;
+      const treffer = (data.synergies?.[faction] ?? {})[id] ?? [];
+      const counts = {};
+      for (const eintrag of treffer) {
+        counts[eintrag.kind] = (counts[eintrag.kind] ?? 0) + 1;
+      }
+      return {
+        datasheet_id: id,
+        rules_based: {
+          available: treffer.length > 0,
+          synergies: treffer,
+          counts,
+          ...(data.synergy_meta ?? {}),
+        },
+        empirical: { available: false, reason: data.meta.context_reason },
+      };
+    },
+    // Der Generator läuft hier genauso wie Reducer und Validator: als
+    // Zwilling in rules.js. Die Doppelung ist tragbar, weil
+    // tests/test_parity.py beide Seiten dieselben Listen bauen lässt und
+    // Eintrag für Eintrag vergleicht — und weil die Stellschrauben aus
+    // generator.as_dict() kommen, also weiterhin nur einmal existieren.
+    canGenerate: true,
+    generate: async (list, mode) => WHRules.generate(
+      list, contextFor(list.faction_id), data.generator, mode === "fill"),
     // Ohne Server gibt es keinen neuen Regelstand zu melden. Eine neue
     // Offline-Datei ist ein neuer Download, kein Live-Update.
     subscribe() {},
@@ -249,6 +296,10 @@ async function init() {
     return;
   }
 
+  // Ohne Server kein Generator — der Knopf verschwindet, statt tot
+  // dazustehen. Die Offline-Datei sagt im Übrigen selbst, was sie ist.
+  if (!backend.canGenerate) $("generate").hidden = true;
+
   const limits = $("points-limit");
   for (const limit of state.meta.points_limits) {
     limits.append(new Option(`${limit} Pkt.`, limit));
@@ -334,6 +385,19 @@ function wireEvents() {
     state.pinned = !state.pinned;
     $("insp-pin").setAttribute("aria-pressed", String(state.pinned));
   });
+  $("sheet-backdrop").addEventListener("click", closeInspector);
+
+  // Reiter — nur auf dem Telefon sichtbar, siehe styles.css.
+  $("tab-catalog").addEventListener("click", () => selectTab("catalog"));
+  $("tab-army").addEventListener("click", () => selectTab("army"));
+
+  wireExport();
+  wireGenerator();
+
+  // Vom Hoch- ins Querformat gedreht kann aus dem Sheet eine Spalte werden
+  // (und umgekehrt). Dann muss die Abdeckung mitziehen, sonst bleibt ein
+  // grauer Schleier über einer Ansicht, die gar kein Sheet mehr ist.
+  window.addEventListener("resize", syncBackdrop);
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !$("inspector").hidden) closeInspector();
@@ -343,6 +407,22 @@ function wireEvents() {
       event.preventDefault(); redo();
     }
   });
+}
+
+/** Telefonansicht: Katalog und Liste teilen sich die Fläche nicht, sie lösen
+ *  sich ab. Auf breiteren Geräten stehen beide nebeneinander und die Klassen
+ *  bleiben ohne Wirkung. */
+function selectTab(which) {
+  const main = document.querySelector("main");
+  main.classList.toggle("show-catalog", which === "catalog");
+  main.classList.toggle("show-army", which === "army");
+  $("tab-catalog").setAttribute("aria-selected", String(which === "catalog"));
+  $("tab-army").setAttribute("aria-selected", String(which === "army"));
+}
+
+function syncBackdrop() {
+  const open = !$("inspector").hidden;
+  $("sheet-backdrop").hidden = !(open && sheetMode());
 }
 
 async function undo() {
@@ -370,8 +450,25 @@ function render() {
   renderArmy();
   renderBudget();
   renderFindings();
+  renderTabs();
   $("undo").disabled = !state.history.length;
   $("redo").disabled = !state.future.length;
+}
+
+/**
+ * Zähler am Reiter "Liste".
+ *
+ * Auf dem Telefon ist die Liste beim Hinzufügen gar nicht zu sehen — der
+ * Katalog füllt den Bildschirm. Ohne Rückmeldung tippt man ins Leere und
+ * weiß nicht, ob die Einheit angekommen ist. Der Zähler schließt diese
+ * Lücke, und ein Regelbruch färbt ihn rot: Sonst bliebe auf dem Telefon
+ * unbemerkt, dass die Liste illegal geworden ist, weil die Meldungen im
+ * anderen Reiter stehen.
+ */
+function renderTabs() {
+  const badge = $("tab-count");
+  badge.textContent = String(state.list.entries.length);
+  badge.classList.toggle("bad", Boolean(state.validation?.errors));
 }
 
 function renderBudget(preview = null) {
@@ -438,9 +535,19 @@ function renderCatalog() {
         if (event.key === "Enter") openInspector(item.id);
         if (event.key === "+") addUnit(item);
       });
-      row.addEventListener("mouseenter", () =>
-        renderBudget((state.validation?.points_used ?? 0) + cheapestCost(item)));
-      row.addEventListener("mouseleave", () => renderBudget());
+      // Punktevorschau beim Überfahren. Am Touchscreen gibt es kein
+      // Überfahren: Dort schickt der Browser beim Antippen ein einmaliges
+      // `mouseenter` hinterher und nie das passende `mouseleave` — die
+      // Vorschau bliebe stehen und die Budgetleiste zeigte dauerhaft eine
+      // Zahl an, die niemand ausgelöst hat.
+      row.addEventListener("mouseenter", () => {
+        if (!canHover()) return;
+        renderBudget((state.validation?.points_used ?? 0) + cheapestCost(item));
+      });
+      row.addEventListener("mouseleave", () => {
+        if (!canHover()) return;
+        renderBudget();
+      });
 
       group.append(row);
     }
@@ -653,6 +760,7 @@ function openInspector(datasheetId, entryUid = null) {
   state.inspected = datasheetId;
   $("inspector").hidden = false;
   document.querySelector("main").classList.add("with-inspector");
+  syncBackdrop();
 
   $("insp-name").textContent = item.name;
   const cost = cheapestCost(item);
@@ -684,12 +792,18 @@ function openInspector(datasheetId, entryUid = null) {
   renderCatalog();
 
   loadContext(datasheetId);
-  if (entryUid) $("insp-close").focus();
+  // Als Sheet ist das Panel ein eigener Kontext: Der Fokus gehört hinein,
+  // sonst tippt die Tastatur weiter in die verdeckte Liste.
+  if (entryUid || sheetMode()) $("insp-close").focus();
 }
 
 function closeInspector() {
-  if (state.pinned) return;
+  // Angeheftet bleibt angeheftet — außer das Panel liegt als Sheet über der
+  // Liste. Dann verdeckt es sie, und "lässt sich nicht schließen" hieße
+  // "die Liste ist bis zum Neuladen weg".
+  if (state.pinned && !sheetMode()) return;
   $("inspector").hidden = true;
+  $("sheet-backdrop").hidden = true;
   document.querySelector("main").classList.remove("with-inspector");
   state.inspected = null;
   renderCatalog();
@@ -888,20 +1002,92 @@ function sectionComposition(item) {
  */
 function sectionMeta() {
   return section("Meta & Synergie",
-    '<p class="note" id="insp-meta">wird geladen …</p>', "sec meta");
+    '<div id="insp-meta"><p class="note">wird geladen …</p></div>', "sec meta");
 }
 
+/**
+ * Abschnitt 11 — die beiden Signalfamilien aus §4 getrennt.
+ *
+ * Die regelbasierte Hälfte (§4.1) steht in den Regeldaten und ist da; die
+ * empirische (§4.2) braucht Turnierlisten und fehlt. Sie zusammenzurühren
+ * wäre bequemer und genau der Fehler, vor dem der Plan warnt: Danach lässt
+ * sich nicht mehr sagen, *warum* etwas empfohlen wurde.
+ */
 async function loadContext(datasheetId) {
   try {
     const context = await backend.unitContext(datasheetId);
     const target = $("insp-meta");
     if (!target || state.inspected !== datasheetId) return;
-    target.textContent = context.available
-      ? JSON.stringify(context)
-      : `Noch keine Daten — ${context.reason}`;
+
+    target.innerHTML = "";
+    target.append(renderSynergies(context.rules_based ?? {}));
+
+    const empirisch = context.empirical ?? {};
+    const note = document.createElement("p");
+    note.className = "note";
+    note.textContent = empirisch.available
+      ? JSON.stringify(empirisch)
+      : `Meta-Zahlen: noch keine Daten — ${empirisch.reason ?? ""}`;
+    target.append(note);
   } catch {
     /* Das Panel wartet nie auf diesen Abschnitt (§6.4). */
   }
+}
+
+function renderSynergies(daten) {
+  const box = document.createElement("div");
+  const synergien = daten.synergies ?? [];
+  if (!synergien.length) {
+    box.innerHTML = '<p class="empty-note">Keine regelbasierte Synergie gefunden.</p>';
+    return box;
+  }
+
+  // Partner, die schon in der Liste stehen, zuerst — das ist die Auskunft,
+  // die beim Bauen tatsächlich weiterhilft.
+  const inList = new Set(state.list.entries.map((entry) => entry.datasheet_id));
+  const gruppen = new Map();
+  for (const eintrag of synergien) {
+    if (!gruppen.has(eintrag.title)) gruppen.set(eintrag.title, []);
+    gruppen.get(eintrag.title).push(eintrag);
+  }
+
+  for (const [titel, eintraege] of gruppen) {
+    eintraege.sort((a, b) =>
+      Number(inList.has(b.partner_id)) - Number(inList.has(a.partner_id)));
+
+    const kopf = document.createElement("p");
+    kopf.className = "muted";
+    kopf.style.margin = "8px 0 2px";
+    const gesamt = daten.counts?.[eintraege[0].kind] ?? eintraege.length;
+    kopf.innerHTML =
+      `${escapeHtml(titel)} ` +
+      `<span class="basis ${eintraege[0].basis}" title="${escapeHtml(eintraege[0].note)}">` +
+      `${eintraege[0].basis === "DATA" ? "belegt" : "abgeleitet"}</span>` +
+      (gesamt > eintraege.length
+        ? ` <span class="muted">(${eintraege.length} von ${gesamt})</span>` : "");
+    box.append(kopf);
+
+    for (const eintrag of eintraege) {
+      const row = document.createElement("div");
+      row.className = "link-row";
+      row.innerHTML =
+        `<button data-open="${escapeHtml(eintrag.partner_id)}">` +
+        `${escapeHtml(eintrag.partner_name)}</button>` +
+        (inList.has(eintrag.partner_id)
+          ? '<span class="in-list">in der Liste</span>' : "");
+      const why = document.createElement("div");
+      why.className = "syn-why";
+      why.textContent = eintrag.explanation;
+      const wrap = document.createElement("div");
+      wrap.append(row, why);
+      box.append(wrap);
+    }
+  }
+
+  for (const button of box.querySelectorAll("[data-open]")) {
+    button.addEventListener("click", () => openInspector(button.dataset.open));
+  }
+  return box;
 }
 
 function footer(item) {
@@ -919,8 +1105,83 @@ function footer(item) {
 }
 
 // ------------------------------------------------------------------ Export
+//
+// Der Export lief früher über `alert()` und schrieb still in die
+// Zwischenablage. Beides trägt auf dem Telefon nicht:
+//
+// * `navigator.clipboard` gibt es nur im *secure context*. Wer die App im
+//   WLAN über `http://192.168.…` aufruft — der dokumentierte Weg aufs iPad —
+//   hat die API schlicht nicht. Der alte Code fing das mit `?.` ab und
+//   behauptete anschließend trotzdem, es sei kopiert worden.
+// * Aus einem `alert()` lässt sich nichts markieren. Ohne Zwischenablage
+//   war die Liste damit nicht aus der App herauszubekommen.
+//
+// Der Dialog zeigt den Text deshalb in einem Feld, aus dem man ihn zur Not
+// von Hand kopiert, bietet `navigator.share` an, wo es das gibt — und sagt,
+// was tatsächlich passiert ist.
+
+function wireExport() {
+  const dialog = $("export-dialog");
+
+  $("export-copy").addEventListener("click", async () => {
+    const area = $("export-text");
+    const status = $("export-status");
+    area.focus();
+    area.setSelectionRange(0, area.value.length);
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(area.value);
+        status.textContent = "In die Zwischenablage kopiert.";
+        return;
+      }
+    } catch {
+      /* Weiter mit execCommand — manche Browser verweigern erst beim Aufruf. */
+    }
+
+    const copied = document.execCommand?.("copy") ?? false;
+    status.textContent = copied
+      ? "In die Zwischenablage kopiert."
+      : "Ohne HTTPS gibt der Browser die Zwischenablage nicht frei — "
+        + "der Text ist markiert und lässt sich von Hand kopieren.";
+  });
+
+  $("export-share").addEventListener("click", async () => {
+    try {
+      await navigator.share({
+        title: state.list.name,
+        text: $("export-text").value,
+      });
+    } catch {
+      /* Abbrechen im Teilen-Menü ist kein Fehler. */
+    }
+  });
+
+  // Ein Tipp neben den Dialog schließt ihn — auf dem Telefon der erwartete
+  // Weg zurück, weil der Dialog fast den ganzen Bildschirm einnimmt.
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+}
 
 function exportList() {
+  const text = exportText();
+  const dialog = $("export-dialog");
+
+  // `<dialog>` fehlt nur noch in sehr alten Browsern; dort bleibt der alte Weg.
+  if (typeof dialog?.showModal !== "function") {
+    navigator.clipboard?.writeText(text).catch(() => {});
+    alert(text);
+    return;
+  }
+
+  $("export-text").value = text;
+  $("export-status").textContent = "";
+  $("export-share").hidden = typeof navigator.share !== "function";
+  dialog.showModal();
+}
+
+function exportText() {
   const lines = [
     state.list.name,
     `${state.validation?.points_used ?? 0}/${state.list.points_limit} Punkte`,
@@ -947,9 +1208,132 @@ function exportList() {
     lines.push(`${entry.model_count}x ${entryCard?.name ?? entry.datasheet_id}` +
       ` (${points})${extras.length ? ` [${extras.join(", ")}]` : ""}`);
   }
-  const text = lines.join("\n");
-  navigator.clipboard?.writeText(text).catch(() => {});
-  alert(`${text}\n\n(in die Zwischenablage kopiert)`);
+  return lines.join("\n");
+}
+
+// --------------------------------------------------------------- Vorschlag
+// PLAN.md §5.3 und §6.1: Der Generator schlägt vor, der Nutzer entscheidet.
+// Der Vorschlag kommt als Patch — dieselben Aktionen, die auch jeder Klick
+// im Builder erzeugt. Daraus folgt zweierlei ohne weiteres Zutun: Der Diff
+// ist anzeigbar, bevor irgendetwas passiert, und "Übernehmen" landet als
+// *ein* Schritt in der Historie, ist also mit Strg+Z zurückzunehmen.
+
+/** Der zuletzt erzeugte, noch nicht übernommene Vorschlag. */
+let pendingProposal = null;
+
+function wireGenerator() {
+  const dialog = $("gen-dialog");
+
+  $("generate").addEventListener("click", () => {
+    pendingProposal = null;
+    $("gen-result").hidden = true;
+    $("gen-apply").disabled = true;
+    $("gen-points").textContent = "";
+    $("gen-status").textContent = state.list.faction_id
+      ? ""
+      : "Erst eine Fraktion wählen — ohne sie gibt es nichts vorzuschlagen.";
+    dialog.showModal();
+  });
+
+  $("gen-run").addEventListener("click", runGenerator);
+  $("gen-apply").addEventListener("click", async () => {
+    if (!pendingProposal?.patch?.length) return;
+    dialog.close();
+    await dispatch(...pendingProposal.patch);
+    pendingProposal = null;
+    // Auf dem Telefon liegt die Liste im anderen Reiter. Wer gerade 25
+    // Einheiten übernommen hat, will sie sehen und nicht den Katalog.
+    selectTab("army");
+  });
+
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+}
+
+async function runGenerator() {
+  const mode = document.querySelector('input[name="gen-mode"]:checked').value;
+  const run = $("gen-run");
+  run.disabled = true;
+  $("gen-status").textContent = "Wird gerechnet …";
+
+  try {
+    const result = await backend.generate(state.list, mode);
+    pendingProposal = result;
+    renderProposal(result);
+  } catch (error) {
+    console.error(error);
+    $("gen-status").textContent = `Vorschlag fehlgeschlagen — ${error.message}`;
+    $("gen-result").hidden = true;
+    $("gen-apply").disabled = true;
+  } finally {
+    run.disabled = false;
+  }
+}
+
+function renderProposal(result) {
+  // Nur Entfernungen zählen, die *bestehende* Einträge treffen. Die lokale
+  // Suche tauscht ihre eigenen Griffe wieder aus (Entfernen + Hinzufügen);
+  // die als „ersetzt" zu melden, wäre bei leerer Startliste schlicht falsch.
+  const bestehende = new Set(state.list.entries.map((entry) => entry.uid));
+  const removed = result.patch.filter(
+    (action) => action.type === "REMOVE_UNIT" && bestehende.has(action.uid)).length;
+
+  $("gen-status").textContent =
+    `${result.list.entries.length} Einheiten im Vorschlag` +
+    (removed ? ` · ${removed} bestehende werden ersetzt` : "") + ".";
+
+  // Abdeckung: das, was der Generator maximiert hat.
+  const coverage = $("gen-coverage");
+  coverage.innerHTML = "";
+  const titel = Object.fromEntries(
+    (result.role_specs ?? []).map((spec) => [spec.key, spec.title]));
+  for (const [key, value] of Object.entries(result.coverage ?? {})) {
+    const row = document.createElement("div");
+    row.className = "cov-row" + (value < 0.85 ? " thin" : "");
+    row.innerHTML =
+      `<span class="lbl">${escapeHtml(titel[key] ?? key)}</span>` +
+      `<span class="bar"><span style="width:${Math.round(value * 100)}%"></span></span>` +
+      `<span class="val">${Math.round(value * 100)} %</span>`;
+    coverage.append(row);
+  }
+
+  // Der Diff, Zeile für Zeile mit Begründung (§5.5).
+  const diff = $("gen-diff");
+  diff.innerHTML = "";
+  if (removed) {
+    const row = document.createElement("div");
+    row.className = "gen-line remove";
+    row.innerHTML = `<span class="sign">−</span><span class="why">` +
+      `${removed} bestehende ${removed === 1 ? "Einheit wird" : "Einheiten werden"} ` +
+      "entfernt und neu aufgebaut.</span>";
+    diff.append(row);
+  }
+  for (const pick of result.picks ?? []) {
+    const row = document.createElement("div");
+    row.className = "gen-line";
+    row.innerHTML =
+      '<span class="sign">+</span>' +
+      `<span class="nm">${pick.model_count}× ${escapeHtml(pick.name)}</span>` +
+      `<span class="why">${escapeHtml(pick.reason)}</span>` +
+      `<span class="pts">${pick.cost ? `${pick.cost}` : "–"}</span>`;
+    diff.append(row);
+  }
+
+  $("gen-gaps").textContent = (result.gaps ?? []).length
+    ? `Bleibt offen: ${result.gaps.join(" · ")}`
+    : "";
+
+  // Was der Vorschlag *nicht* weiß, steht dabei — sonst ist er eine
+  // Blackbox, der niemand trauen sollte (§5.5).
+  $("gen-evidence").textContent = result.missing_evidence?.meta ?? "";
+
+  const validation = result.validation ?? {};
+  $("gen-points").textContent =
+    `${validation.points_used} / ${validation.points_limit} Punkte · ` +
+    (validation.legal ? "legal" : `${validation.errors} Regelbruch`);
+  $("gen-result").hidden = false;
+  $("gen-apply").disabled = !result.patch?.length;
 }
 
 // ------------------------------------------------------------ Live-Updates
