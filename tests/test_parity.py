@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -49,6 +50,10 @@ def browser_cards(session) -> list[dict]:
             "points": payload["points"],
             "can_lead": payload["can_lead"],
             "enhancement_ids": payload["enhancement_ids"],
+            # Waffen und Profile braucht der Generator für das Rollenprofil
+            # (§5.2). Die Offline-Datei liefert ohnehin die ganze Karte aus.
+            "weapons": payload["weapons"],
+            "profiles": payload["profiles"],
         })
     return cards
 
@@ -315,5 +320,185 @@ def test_konstanten_kommen_aus_einer_quelle():
     quelle = (Path(__file__).parent.parent / "app" / "static" / "rules.js").read_text()
     for zahl in ("max_same_datasheet", "max_enhancements", "max_leaders_per_unit"):
         assert f"ruleset.{zahl}" in quelle, f"{zahl} wird nicht aus ruleset gelesen"
-    # Keine hartkodierte 3 als Obergrenze im Browser-Code.
-    assert "= 3;" not in quelle
+
+    # Keine hartkodierte Obergrenze für gleiche Datasheets.
+    #
+    # Dieser Test suchte früher pauschal nach "= 3;". Seit die Datei auch
+    # das Rollenprofil enthält, steht dort die Verwundungstabelle des
+    # Kernregelwerks — "S größer als T, also braucht es eine 3+". Das ist
+    # keine Listenbau-Konstante, die sich mit einem Dataslate ändert,
+    # sondern die Rechenregel selbst. Der Wächter zielt deshalb jetzt auf
+    # die Zeilen, um die es ihm ging.
+    hartkodiert = [
+        zeile.strip() for zeile in quelle.splitlines()
+        if ("copies" in zeile.lower() or "enhancement" in zeile.lower())
+        and re.search(r"[=<>]\s*\d+\s*;", zeile)
+    ]
+    assert not hartkodiert, f"Obergrenze hartkodiert: {hartkodiert}"
+
+
+# ---------------------------------------------------------------------------
+# Der Generator gibt es ebenfalls zweimal
+# ---------------------------------------------------------------------------
+#
+# Ohne Server soll auf dem iPad nicht nur validiert, sondern auch gebaut
+# werden können. Damit steht neben Reducer und Validator jetzt auch der
+# Generator doppelt da — und muss denselben Nachweis erbringen: Beide Seiten
+# bauen aus derselben Ausgangslage dieselbe Liste.
+#
+# Verglichen wird *strukturell*, nicht über uids: Die vergibt jede Seite
+# selbst (uuid4 hier, Math.random dort), sie können gar nicht gleich sein.
+# Verglichen werden Reihenfolge und Inhalt der Einträge, wer an wem hängt,
+# Punkte, Legalität, Abdeckung und jeder Begründungstext.
+
+
+def generator_config() -> dict:
+    from app.rules import generator
+
+    return generator.as_dict()
+
+
+def run_browser_generator(session, liste: dict, keep_existing: bool) -> dict:
+    payload = {
+        "ruleset": ruleset.as_dict() | {"ruleset_version": "wh40k11ed"},
+        "cards": browser_cards(session),
+        "enhancements": browser_enhancements(session),
+        "list": liste,
+        "generate": {"config": generator_config(), "keep_existing": keep_existing},
+    }
+    result = subprocess.run(
+        ["node", str(DRIVER)],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def run_python_generator(session, liste: dict, keep_existing: bool) -> dict:
+    from app.rules import generator
+
+    state = BuilderList.from_dict(liste)
+    ctx = RulesContext(session, state.ruleset_version)
+    return generator.generate(session, state, ctx, keep_existing).to_dict()
+
+
+def struktur(ergebnis: dict) -> dict:
+    """Alles, was beide Seiten gleich haben müssen — ohne die uids."""
+    entries = ergebnis["list"]["entries"]
+    index = {entry["uid"]: position for position, entry in enumerate(entries)}
+    return {
+        "einheiten": [
+            (e["datasheet_id"], e["model_count"], e["is_warlord"],
+             e["enhancement_id"])
+            for e in entries
+        ],
+        "anschluesse": [
+            (position, index.get(e["attached_to_uid"]))
+            for position, e in enumerate(entries) if e["attached_to_uid"]
+        ],
+        "transporte": [
+            (position, index.get(e["transported_in_uid"]))
+            for position, e in enumerate(entries) if e["transported_in_uid"]
+        ],
+        "punkte": ergebnis["validation"]["points_used"],
+        "legal": ergebnis["validation"]["legal"],
+        "meldungen": [f["message"] for f in ergebnis["validation"]["findings"]],
+        "begruendungen": [p["reason"] for p in ergebnis["picks"]],
+        "luecken": ergebnis["gaps"],
+    }
+
+
+@pytest.mark.parametrize("limit", [500, 1000, 2000])
+def test_generator_baut_beidseitig_dieselbe_liste(session, limit):
+    liste = leere_liste() | {"points_limit": limit}
+
+    python = run_python_generator(session, liste, keep_existing=False)
+    browser = run_browser_generator(session, liste, keep_existing=False)
+
+    assert struktur(python) == struktur(browser), f"points_limit={limit}"
+    # Python rundet die Abdeckung in to_dict() auf drei Stellen für die
+    # Anzeige; der Browser gibt sie roh heraus. Verglichen wird deshalb auf
+    # derselben Stelle — nicht die Rundung ist die Zusicherung, die Zahl.
+    for key, wert in python["coverage"].items():
+        assert round(browser["coverage"][key], 3) == pytest.approx(wert), key
+
+
+def test_generator_fuellt_beidseitig_gleich_auf(session):
+    """Der Assistenten-Modus — mit gesperrtem Kern aus einem ersten Lauf."""
+    leer = leere_liste()
+    kern = run_python_generator(session, leer, keep_existing=False)
+    vorbelegt = leer | {"entries": kern["list"]["entries"][:1]}
+
+    python = run_python_generator(session, vorbelegt, keep_existing=True)
+    browser = run_browser_generator(session, vorbelegt, keep_existing=True)
+
+    assert struktur(python) == struktur(browser)
+
+
+def test_generator_rechnet_beidseitig_dasselbe_rollenprofil(session):
+    """Die Schadensrechnung selbst, Karte für Karte.
+
+    Läuft sie auseinander, weichen die Listen erst weiter oben ab — und die
+    Ursache wäre dann mühsam zu finden. Hier fällt es sofort auf.
+    """
+    from app.rules import roleprofile
+
+    karten = browser_cards(session)
+    payload = {
+        "ruleset": ruleset.as_dict() | {"ruleset_version": "wh40k11ed"},
+        "cards": karten,
+        "enhancements": browser_enhancements(session),
+        "list": leere_liste(),
+        "generate": {"config": generator_config(), "keep_existing": False},
+    }
+    # Der Treiber liefert die Kandidatenbewertung über die fertige Liste
+    # zurück; für den direkten Vergleich reicht der Vektor je Karte.
+    skript = (
+        "const R = globalThis.WHRules;"
+        "const input = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));"
+        "const out = {};"
+        "for (const card of input.cards) {"
+        "  for (const option of card.points || []) {"
+        "    out[card.id + ' ' + option.models] ="
+        "      R.unitVector(card, option.models, input.generate.config.roles);"
+        "  }"
+        "}"
+        "process.stdout.write(JSON.stringify(out));"
+    )
+    quelle = (Path(__file__).parent.parent / "app" / "static" / "rules.js").read_text()
+    result = subprocess.run(
+        ["node", "-e", f"new Function({json.dumps(quelle)}).call(globalThis);{skript}"],
+        input=json.dumps(payload), capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    browser = json.loads(result.stdout)
+
+    assert browser, "Der Browser hat kein einziges Rollenprofil gerechnet"
+    for card in karten:
+        for option in card["points"]:
+            erwartet = roleprofile.unit_vector(card, option["models"])
+            gemessen = browser[f"{card['id']} {option['models']}"]
+            for feld in ("anti_tank", "anti_elite", "anti_horde",
+                         "durability", "control", "reach"):
+                assert gemessen[feld] == pytest.approx(
+                    getattr(erwartet, feld), rel=1e-9, abs=1e-12), \
+                    f"{card['name']} ({option['models']} Modelle), {feld}"
+
+
+def test_generator_konstanten_kommen_aus_einer_quelle():
+    """Auch der Generator erfindet im Browser keine eigenen Zahlen."""
+    from app.rules import generator
+
+    daten = generator.as_dict()
+    assert daten["spend_weight"] == generator.SPEND_WEIGHT
+    assert daten["weights"] == generator.WEIGHTS
+    assert daten["roles"]["targets"]["anti_tank"]["toughness"] == 10
+
+    quelle = (Path(__file__).parent.parent / "app" / "static" / "rules.js").read_text()
+    for feld in ("spend_weight", "overshoot_credit", "leader_bonus",
+                 "duplicate_penalty", "lone_character_penalty",
+                 "max_character_share", "validate_top_k"):
+        assert f"cfg.{feld}" in quelle, f"{feld} wird nicht aus der Config gelesen"

@@ -28,6 +28,7 @@ mit erfundenen Prozentzahlen zu füllen.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from statistics import median
 
@@ -234,6 +235,33 @@ class GenerationResult:
 # ---------------------------------------------------------------------------
 
 
+def as_dict() -> dict:
+    """Die Stellschrauben für die Browser-Engine.
+
+    Der Generator läuft in der Offline-Datei ein zweites Mal, in
+    JavaScript. Die Suche muss dort noch einmal geschrieben werden — die
+    Zahlen nicht.
+    """
+    return {
+        "weights": dict(WEIGHTS),
+        "shares": dict(SHARES),
+        "spend_weight": SPEND_WEIGHT,
+        "overshoot_credit": OVERSHOOT_CREDIT,
+        "leader_bonus": LEADER_BONUS,
+        "duplicate_penalty": DUPLICATE_PENALTY,
+        "lone_character_penalty": LONE_CHARACTER_PENALTY,
+        "max_character_share": MAX_CHARACTER_SHARE,
+        "enhancement_reserve": ENHANCEMENT_RESERVE,
+        "validate_top_k": VALIDATE_TOP_K,
+        "local_search_rounds": LOCAL_SEARCH_ROUNDS,
+        "specs": {
+            spec.key: {"title": spec.title, "basis": spec.basis, "note": spec.note}
+            for spec in SPECS.values()
+        },
+        "roles": roleprofile.as_dict(),
+    }
+
+
 def load_candidates(
     session: Session, faction_id: str, ruleset_version: str
 ) -> list[Candidate]:
@@ -265,6 +293,13 @@ def load_candidates(
                 cost=cost,
                 vector=roleprofile.unit_vector(payload, model_count),
             ))
+
+    # Feste Reihenfolge, unabhängig davon, wie die Datenbank die Zeilen
+    # ausspuckt. Bei gleichem Grenznutzen entscheidet sonst der Zufall,
+    # welcher Kandidat gewinnt — zwei Läufe lieferten verschiedene Listen,
+    # und die Browser-Engine (die die Karten in anderer Reihenfolge sieht)
+    # könnte gar nicht dasselbe Ergebnis liefern.
+    candidates.sort(key=lambda c: (c.datasheet_id, c.model_count))
     return candidates
 
 
@@ -560,6 +595,22 @@ def _leader_bonus(candidate: Candidate, state: BuilderList,
     return 0.0
 
 
+def _percent(value: float) -> str:
+    """Prozentangabe für Begründungstexte — ausdrücklich kaufmännisch gerundet.
+
+    Bewusst nicht ``f"{value:.0%}"``. Diese Formatierung rechnet auf der
+    exakten Dezimaldarstellung des Doubles und rundet zur *geraden* Zahl:
+    0,585 wird zu „58 %". Die Browser-Engine rundet mit ``Math.round`` auf
+    dem Produkt und kommt auf „59 %" — das Produkt ``0.585 * 100`` ist in
+    beiden Sprachen bitgleich 58,5, nur die Rundungsregel ist eine andere.
+
+    Auf den echten Daten wichen dadurch Begründungen ab, obwohl beide Seiten
+    dieselbe Liste bauten. Eine langweilige, ausgeschriebene Rundung ist hier
+    mehr wert als die kürzere Formatierung.
+    """
+    return f"{math.floor(value * 100 + 0.5)}%"
+
+
 def _biggest_gain(vorher: dict[str, float], nachher: dict[str, float]) -> str | None:
     zuwachs = {k: nachher[k] - vorher.get(k, 0.0) for k in nachher}
     key = max(zuwachs, key=lambda k: zuwachs[k], default=None)
@@ -572,7 +623,7 @@ def _reason(candidate: Candidate, luecke: str | None,
         return f"Füllt {candidate.cost} Punkte, ohne eine Rolle zu verschlechtern."
     titel = roleprofile.SPECS[luecke].title
     return (f"Schließt die größte Lücke: {titel} "
-            f"{vorher.get(luecke, 0.0):.0%} → {nachher[luecke]:.0%}.")
+            f"{_percent(vorher.get(luecke, 0.0))} → {_percent(nachher[luecke])}.")
 
 
 def _enhancement_possible(state: BuilderList, ctx: RulesContext) -> bool:
@@ -660,13 +711,16 @@ def _add_enhancements(session, ctx, state, patch, picks):
             continue
         erlaubt = ctx.allowed_enhancements.get(entry.datasheet_id, set())
         moeglich = [
-            enh for enh_id in erlaubt
+            enh for enh_id in sorted(erlaubt)
             if (enh := ctx.enhancements.get(enh_id))
             and enh.detachment_id == state.detachment_id
         ]
         # Das teuerste zuerst: Enhancements sind Punkte, die sonst liegen
         # bleiben, und der Preis ist der beste verfügbare Hinweis auf Wirkung.
-        for enh in sorted(moeglich, key=lambda e: e.cost, reverse=True):
+        # Die id als zweites Kriterium, damit gleich teure nicht in der
+        # Reihenfolge einer Menge landen — die ist zwischen zwei Prozessen
+        # verschieden, und der Vorschlag wäre nicht reproduzierbar.
+        for enh in sorted(moeglich, key=lambda e: (-e.cost, e.id)):
             aktion = {"type": "SET_ENHANCEMENT", "uid": entry.uid,
                       "enhancement_id": enh.id}
             versuch = apply_all(state, [aktion])
@@ -769,7 +823,7 @@ def _gaps(abdeckung: dict[str, float], ergebnis: ValidationResult,
           state: BuilderList) -> list[str]:
     """„Was fehlt der Liste?" — §5.5, dritte Begründungsart."""
     luecken = [
-        f"{roleprofile.SPECS[key].title}: {wert:.0%} der Zielabdeckung"
+        f"{roleprofile.SPECS[key].title}: {_percent(wert)} der Zielabdeckung"
         for key, wert in sorted(abdeckung.items(), key=lambda kv: kv[1])
         if wert < 0.85
     ]

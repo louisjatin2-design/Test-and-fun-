@@ -26,7 +26,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app import config, db, derive, models
-from app.rules import ruleset
+from app.rules import generator, ruleset
 
 STATIC = Path(__file__).resolve().parent / "static"
 
@@ -153,6 +153,9 @@ def collect(session, faction_ids: list[str] | None, text_mode: str) -> dict:
             ],
         },
         "ruleset": ruleset.as_dict(),
+        # Ohne Server rechnet der Generator im Browser (app/static/rules.js).
+        # Die Suche steht dort ein zweites Mal, die Stellschrauben nicht.
+        "generator": generator.as_dict(),
         "factions": sorted(
             ({"id": fid, "name": faction_names.get(fid, fid)} for fid in present),
             key=lambda f: f["name"],

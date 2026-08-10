@@ -56,7 +56,9 @@ Modelliert sind Torrent, Twin-linked, Sustained Hits, Lethal Hits, Devastating W
 
 Die Stellschrauben der Zielfunktion sind gesetzt, nicht belegt. Sie stehen gesammelt oben in `app/rules/generator.py`, jede mit Begründung — und die Zielhöhen wurden gemessen statt geraten: Beim ersten Ansatz erreichte eine volle Liste das Fünf- bis Neunfache des Ziels, war also nach einem Drittel des Budgets gesättigt und der Rest der Liste beliebig. Das Verfahren ist wiederholbar; wer die Gewichte ändert, misst neu.
 
-**Nur mit Server.** Die Offline-Datei blendet den Knopf aus. Den Generator ein zweites Mal in JavaScript zu bauen hieße, Zielfunktion und Suche doppelt zu pflegen — dieselbe Doppelung, die bei Reducer und Validator nur deshalb tragbar ist, weil `tests/test_parity.py` sie Zeile für Zeile gegeneinander hält.
+**Läuft auch ohne Server.** Der Generator steht wie Reducer und Validator ein zweites Mal in `app/static/rules.js` und arbeitet damit in der Offline-Datei auf iPad und iPhone — im Flugmodus, ohne einen einzigen Netzwerkzugriff. Die Doppelung ist tragbar, weil `tests/test_parity.py` beide Seiten aus derselben Ausgangslage bauen lässt und Einheit für Einheit, Anschluss für Anschluss und Begründung für Begründung vergleicht. Die Stellschrauben kommen aus `generator.as_dict()`, existieren also weiterhin nur einmal.
+
+Dass das nicht selbstverständlich ist, zeigte die Prüfung auf den echten Daten: Sieben von neun Fraktionen stimmten sofort überein, zwei wichen in *einem* Begründungstext ab. Ursache war die Prozentformatierung — `f"{0.585:.0%}"` ergibt in Python „58 %", `Math.round(0.585 * 100)` im Browser „59 %". Das Produkt ist in beiden Sprachen bitgleich 58,5; nur die Rundungsregel war eine andere. Beide Seiten runden jetzt ausdrücklich kaufmännisch.
 
 ## Loslegen
 
@@ -93,7 +95,7 @@ python -m app.build_offline --faction SM --out dist/marines.html
 
 eine **einzelne HTML-Datei** mit Oberfläche, Regel-Engine und allen Daten darin (alle Fraktionen: rund 13 MB). Auf das Gerät kopieren, antippen, fertig: Sie läuft vollständig offline, auch im Flugmodus, und macht keinen einzigen Netzwerkzugriff.
 
-Reducer und Validator kommen dabei aus `app/static/rules.js` statt aus Python. Diese Doppelung ist der Preis dafür, dass ohne Server überhaupt validiert werden kann — `tests/test_parity.py` treibt dieselben zufälligen Aktionsfolgen durch beide Engines und vergleicht Punkte, Legalität und jeden Meldungstext.
+Reducer, Validator **und Generator** kommen dabei aus `app/static/rules.js` statt aus Python. Diese Doppelung ist der Preis dafür, dass ohne Server überhaupt validiert und gebaut werden kann — `tests/test_parity.py` treibt dieselben zufälligen Aktionsfolgen durch beide Engines und vergleicht Punkte, Legalität und jeden Meldungstext; für den Generator vergleicht er die gebauten Listen Eintrag für Eintrag.
 
 Was der Offline-Datei fehlt: Live-Updates. Ein neuer Regelstand heißt hier, die Datei neu zu bauen. `dist/` ist aus demselben Grund wie `data/` gitignored — die Datei enthält die vollständigen Regeltexte und ist für den eigenen Gebrauch, nicht zum Hochladen.
 
@@ -192,7 +194,7 @@ Ein `python -m app.etl.wahapedia` von Hand wird ebenfalls bemerkt: Maßgeblich i
 pytest
 ```
 
-249 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
+255 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
 
 ## Aufbau
 

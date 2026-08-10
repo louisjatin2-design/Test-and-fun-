@@ -391,6 +391,39 @@ def unit_vector(card: dict, model_count: int) -> RoleVector:
     )
 
 
+def as_dict() -> dict:
+    """Die Modellkonstanten für die Browser-Engine.
+
+    Wie bei :func:`app.rules.ruleset.as_dict`: Die Rechnung gibt es ohne
+    Server zwangsläufig zweimal, die Zahlen aber weiterhin nur einmal.
+    """
+    return {
+        "coverage_keys": list(COVERAGE_KEYS),
+        "reference_attack": {
+            "strength": REFERENCE_ATTACK_STRENGTH,
+            "armour_penetration": REFERENCE_ATTACK_AP,
+        },
+        "targets": {
+            key: {
+                "name": target.name,
+                "toughness": target.toughness,
+                "save": target.save,
+                "invulnerable": target.invulnerable,
+                "wounds": target.wounds,
+                "models": target.models,
+                "keywords": sorted(target.keywords),
+            }
+            for key, target in TARGETS.items()
+        },
+        "specs": {
+            spec.key: {"title": spec.title, "basis": spec.basis, "note": spec.note}
+            for spec in SPECS.values()
+        },
+        "missing_roles": dict(MISSING_ROLES),
+        "ignored_weapon_rules": list(IGNORED_WEAPON_RULES),
+    }
+
+
 def _armour_penetration(value) -> int:
     """AP als negative Zahl. Der Export schreibt ``0``, ``-1``, ``-2``.
 

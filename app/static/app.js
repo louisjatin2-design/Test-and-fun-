@@ -144,12 +144,14 @@ function offlineBackend() {
       datasheet_id: id, available: false, synergies: [],
       reason: data.meta.context_reason,
     }),
-    // Der Generator läuft auf dem Server. Ihn ein zweites Mal in JavaScript
-    // zu bauen hieße, Zielfunktion und Suche doppelt zu pflegen — dieselbe
-    // Doppelung, die bei Reducer und Validator nur deshalb tragbar ist,
-    // weil tests/test_parity.py sie Zeile für Zeile gegeneinander hält.
-    // Statt eines zweiten, ungeprüften Generators steht hier ehrlich nichts.
-    canGenerate: false,
+    // Der Generator läuft hier genauso wie Reducer und Validator: als
+    // Zwilling in rules.js. Die Doppelung ist tragbar, weil
+    // tests/test_parity.py beide Seiten dieselben Listen bauen lässt und
+    // Eintrag für Eintrag vergleicht — und weil die Stellschrauben aus
+    // generator.as_dict() kommen, also weiterhin nur einmal existieren.
+    canGenerate: true,
+    generate: async (list, mode) => WHRules.generate(
+      list, contextFor(list.faction_id), data.generator, mode === "fill"),
     // Ohne Server gibt es keinen neuen Regelstand zu melden. Eine neue
     // Offline-Datei ist ein neuer Download, kein Live-Update.
     subscribe() {},
