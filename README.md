@@ -123,11 +123,19 @@ python -m app.build_offline --faction SM --out dist/marines.html
 
 eine **einzelne HTML-Datei** mit Oberfläche, Regel-Engine und allen Daten darin (alle Fraktionen: rund 12 MB). Auf das Gerät kopieren, in einem Browser öffnen, fertig: Sie läuft vollständig offline, auch im Flugmodus, und macht keinen einzigen Netzwerkzugriff.
 
-#### Auf iPad und iPhone: in einem Browser öffnen, nicht in der Vorschau
+#### Auf iPad und iPhone braucht die Datei eine App, die JavaScript ausführt
 
-Tippt man die Datei in **Dateien** nur an, zeigt iOS eine Vorschau — und die führt **kein JavaScript** aus. Die Seite erscheint dann zwar, aber alle Auswahlfelder bleiben leer: Fraktion, Detachment und Katalog füllt das Programm, und das lief nie. Stattdessen die Datei antippen, oben auf **Teilen** und einen Browser wählen.
+**Antippen in „Dateien" genügt nicht — und das ist kein Fehler der Datei.** iOS zeigt sie dann in *Quick Look*, und Quick Look führt bei HTML grundsätzlich kein JavaScript aus. Die Seite erscheint zwar, aber alle Auswahlfelder bleiben leer: Fraktion, Detachment und Katalog baut das Programm auf, und das lief nie. Genau dieses Bild — „ich kann einfach keine Fraktion auswählen" — kommt daher und nicht aus den Daten.
 
-Sagt die Datei beim Öffnen **„Wird geladen …"** und bleibt dabei stehen, hat sie es nicht bis zum Start geschafft. Zwei Ursachen kommen in Frage, und beide stehen auf dem Bildschirm: kein JavaScript (siehe oben) oder zu wenig Speicher. Gegen den Speicher hilft ein kleinerer Build — wer zwei Fraktionen spielt, braucht die anderen achtzehn nicht dabeizuhaben:
+**Der frühere Ausweg ist zu.** Bis iOS 17 ließ sich eine lokale HTML-Datei noch an Safari übergeben. [Seit iOS 18 öffnet Safari keine lokalen HTML-Dateien mehr](https://discussions.apple.com/thread/256102223).
+
+Bleibt: eine App, die lokale HTML-Dateien **mit** JavaScript darstellt. Die Datei dazu in „Dateien" antippen → **Teilen** → App auswählen. Übertragen wird weiterhin nur die eine `.html`; alles Übrige steckt darin.
+
+Kandidaten aus dem App Store — [HTMLViewer Pro+](https://apps.apple.com/qa/app/htmlviewer-pro/id6746694144?l=en-GB), [Web Archive Inspector](https://apps.apple.com/us/app/web-archive-inspector/id1612969098), [HTML Editor Plus](https://apps.apple.com/hn/app/html-editor-plus/id1638254225?l=es-MX). Sie werben mit vollem JavaScript und Offline-Betrieb; **ausprobiert sind sie hier nicht**, und die Lage ändert sich mit jeder iOS-Version.
+
+**Die Datei prüft das selbst.** Steht nach dem Öffnen ein Kasten „Hier läuft kein JavaScript" da, führt diese App keins aus — nächste probieren. Erscheint der Builder, ist es die richtige. Der Test dauert fünf Sekunden und braucht keinen Rechner.
+
+Sagt die Datei dagegen **„Wird geladen …"** und bleibt dabei stehen, läuft JavaScript zwar, der Start ist aber unterwegs gescheitert — in aller Regel am Speicher. Dann hilft ein kleinerer Build; wer zwei Fraktionen spielt, braucht die anderen achtzehn nicht dabeizuhaben:
 
 ```bash
 python -m app.build_offline --list-factions

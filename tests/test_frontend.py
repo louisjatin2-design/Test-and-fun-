@@ -325,6 +325,27 @@ def test_startbildschirm_erklaert_den_fehlstart():
     assert 'bootDone' in app_js and 'init().catch(bootFailed)' in app_js
 
 
+def test_hinweis_schickt_niemanden_mehr_zu_safari():
+    """Der Rat, den die Datei zuerst gab, war falsch.
+
+    „Datei antippen, Teilen, Browser wählen" stimmte bis iOS 17. Seit iOS 18
+    öffnet Safari keine lokalen HTML-Dateien mehr, und Quick Look — was man
+    beim Antippen in „Dateien" bekommt — führt bei HTML grundsätzlich kein
+    JavaScript aus. Wer diesem Rat folgt, sucht eine Option, die es nicht
+    gibt, und hält am Ende die Datei für kaputt.
+
+    Richtig ist: eine App, die lokale HTML-Dateien *mit* JavaScript
+    darstellt. Der Test haelt fest, dass der Hinweis das auch sagt.
+    """
+    noscript = INDEX[INDEX.index("<noscript>"):INDEX.index("</noscript>")]
+
+    assert "Safari" not in noscript or "nicht mehr" in noscript, (
+        "Der Hinweis darf nicht zu Safari schicken — das geht seit iOS 18 nicht")
+    assert "JavaScript" in noscript
+    # Der Kasten ist zugleich die Probe, mit der sich eine App prüfen lässt.
+    assert "Probe" in noscript or "prüfen" in noscript
+
+
 def test_helles_thema_mit_dunkler_variante():
     """Weiß ist die Vorgabe, nicht die Ausnahme.
 

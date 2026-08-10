@@ -220,6 +220,14 @@ select {
   font-size: 13px;
   color: var(--muted);
 }
+/* Die Probe im <noscript>-Kasten: leiser als der Hinweis darüber, aber
+   nicht weggeblendet — sie ist die Anleitung zum Ausprobieren einer App. */
+.boot-card .boot-note {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--muted);
+}
 .boot-card code {
   font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
   background: var(--panel-2);
