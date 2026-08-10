@@ -18,7 +18,7 @@ Der Umsetzungsplan — Datenquellen, Datenmodell, Ranking-Methodik, Synergie-Erk
 | **Validator** | Punktelimit, Fraktion, Rule of Three, Epic Heroes, Enhancements, Leader-Anschluss, Transportkapazität, Warlord |
 | **Live-Updates** | Erkennt neue Wahapedia-Stände im Betrieb, lädt sie nach und meldet sie offenen Browsern — ohne Neustart |
 | **Offline-Datei** | `build_offline.py` erzeugt eine eigenständige HTML-Datei mit Daten und Regel-Engine — läuft ohne Server auf jedem Telefon |
-| **Mobil bedienbar** | Regel-Inspektor als Bottom Sheet, fingerfreundliche Trefferflächen, „Zum Home-Bildschirm" tauglich |
+| **Auf jedem Gerät** | Eine Oberfläche für PC, iPad, iPhone und Android: drei Spalten, zwei Spalten oder Reiter — je nach Platz. Installierbar als App |
 
 Noch offen: Turnierdaten-Ingestion (Phase 1–3), Synergie-Engine (Phase 5), Generator (Phase 6/8). Der Meta-Abschnitt im Inspektor ist dafür vorbereitet und meldet bis dahin ehrlich „noch keine Daten".
 
@@ -71,9 +71,13 @@ ipconfig                            # Windows: "IPv4-Adresse"
 
 **3. Auf dem Gerät aufrufen:** `http://<IP-des-Rechners>:8000`, zum Beispiel `http://192.168.1.42:8000`.
 
-**4. Optional als App ablegen.** Safari → Teilen → „Zum Home-Bildschirm"; Chrome auf Android → Menü → „App installieren". Die Seite startet dann ohne Browserleiste.
+**4. Optional als App ablegen.** Safari → Teilen → „Zum Home-Bildschirm"; Chrome auf Android → Menü → „App installieren". Die Seite startet dann ohne Browserleiste, mit eigenem Symbol.
 
 Klappt es nicht, blockiert meist die Firewall des Rechners den Port — unter macOS und Windows muss Python einmalig für eingehende Verbindungen freigegeben werden.
+
+#### Der Export braucht auf dem Tablet einen Umweg
+
+`navigator.clipboard` gibt es nur im *secure context*, also unter HTTPS oder auf `localhost`. Über `http://192.168.…` — den Weg oben — hat der Browser die Zwischenablage-API schlicht nicht. Der Export-Dialog zeigt den Text deshalb in einem Feld, versucht das Kopieren trotzdem, bietet auf Geräten mit Teilen-Menü `navigator.share` an und schreibt hin, was tatsächlich geklappt hat. Notfalls markiert man den Text und kopiert von Hand.
 
 #### Wichtig: `0.0.0.0` ist nicht mehr nur lokal
 
@@ -84,6 +88,23 @@ WH_RULES_TEXT_MODE=derived WH_BIND_HOST=0.0.0.0 uvicorn app.api.main:app --host 
 ```
 
 oder gar nicht freigeben. Ins offene Internet gehört die Instanz in keinem Fall.
+
+### Eine Oberfläche für alle Geräte
+
+Die App passt sich an zwei Größen an, nicht an eine: an die **Breite** das Layout, an das **Eingabegerät** die Bedienelemente. Das fällt nicht zusammen — ein iPad im Querformat ist 1194 px breit und wird trotzdem mit dem Finger bedient, ein schmal gezogenes Fenster auf dem PC nicht. Wer beides an der Breite festmacht, bekommt auf dem einen Gerät Mausbedienung ohne Maus und auf dem anderen Fingergrößen ohne Finger.
+
+| Breite | Layout | Typisch |
+|---|---|---|
+| über 1024 px | Katalog · Liste · Inspektor nebeneinander | PC, iPad quer |
+| 621–1024 px | Katalog · Liste, Inspektor als Sheet von rechts | iPad hoch, halbes Fenster |
+| bis 620 px | Reiter zwischen Katalog und Liste, Inspektor als Bottom Sheet | iPhone, Android |
+| flach (Höhe ≤ 520 px) | kompakte Kopfzeile, Inspektor von rechts | Telefon quer |
+
+Am Touchscreen (`hover: none`, `pointer: coarse`) kommen unabhängig davon dazu: dauerhaft sichtbare Knöpfe statt Hover-Einblendung, Trefferflächen ab 44 px und 16 px Schrift in allen Eingabefeldern. Die 16 px sind kein Geschmack, sondern eine Funktion: Darunter zoomt Safari beim Antippen eines Feldes die Seite heran — und nicht von selbst wieder heraus.
+
+Dazu kommt, was auf dem Telefon sonst schiefgeht: Höhen in `dvh` statt `vh`, damit die Adressleiste nicht das Fußende der App verdeckt; `env(safe-area-inset-*)` für Notch und Home-Indikator; und ein Manifest, ohne das Chrome kein „App installieren" anbietet.
+
+`tests/test_frontend.py` hält die Regeln fest, deren Verlust ein Gerät unbenutzbar macht — sie sehen im Stylesheet wie Kosmetik aus und sind keine.
 
 ### Regeldaten werden nicht eingecheckt
 
@@ -118,7 +139,7 @@ Ein `python -m app.etl.wahapedia` von Hand wird ebenfalls bemerkt: Maßgeblich i
 pytest
 ```
 
-195 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
+205 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
 
 ## Aufbau
 
@@ -137,6 +158,8 @@ app/
   etl/updates.py       Update-Erkennung und -Übernahme
   api/main.py          FastAPI inkl. SSE-Stream
   static/rules.js      Reducer + Validator für den Browser (Offline-Modus)
+  static/styles.css    Oberfläche inkl. Anpassung an Bildschirm und Finger
+  static/manifest.webmanifest  Macht die App installierbar (Android/Chrome)
   static/              Builder-Oberfläche (kein Build-Schritt)
   build_offline.py     Baut die eigenständige HTML-Datei fürs Telefon
 ```

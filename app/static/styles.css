@@ -1,3 +1,17 @@
+/* Oberfläche des Listenbuilders.
+ *
+ * Die Datei ist nach Bauteilen geordnet; die Anpassungen an Bildschirm und
+ * Eingabegerät stehen gesammelt am Ende ab "Geräte".
+ *
+ * Zwei Achsen, nicht eine: **Breite** entscheidet über das Layout (drei
+ * Spalten, zwei Spalten, Reiter), **Zeigegerät** über die Bedienelemente
+ * (Trefferflächen, sichtbare Knöpfe, Schriftgröße in Eingabefeldern). Sie
+ * fallen nicht zusammen — ein iPad im Querformat ist 1194 px breit und wird
+ * trotzdem mit dem Finger bedient, ein schmales Fenster auf dem PC ist es
+ * nicht. Wer beides an der Breite festmacht, bekommt auf dem einen Gerät
+ * Mausbedienung ohne Maus und auf dem anderen Fingergrößen ohne Finger.
+ */
+
 :root {
   --bg: #14161a;
   --panel: #1c1f26;
@@ -10,6 +24,22 @@
   --warning: #d9a441;
   --ok: #5aab6e;
   --radius: 6px;
+
+  /* Sichere Ränder: auf dem iPhone liegen Notch und Home-Indikator über der
+     Seite, seit `viewport-fit=cover` im Viewport steht. Ohne diese Werte
+     verschwindet die Attribution unter dem Home-Indikator und im Querformat
+     die linke Spalte unter der Notch. Auf Geräten ohne solche Ränder sind
+     alle vier 0 — die Regeln kosten dort nichts. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+
+  /* Mindestgröße einer Trefferfläche am Finger. 44 px ist die Zahl aus den
+     Apple Human Interface Guidelines; Android nennt 48 dp. */
+  --touch: 44px;
+
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -19,9 +49,28 @@ body {
   background: var(--bg);
   color: var(--text);
   font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* `dvh` statt `vh`: Safari zählt in `vh` die eingeblendete Adressleiste
+     mit, Chrome auf Android ebenso. Mit `100vh` steht das Fußende der App
+     dauerhaft hinter der Leiste — die Attribution und die letzte Einheit der
+     Liste sind dann unerreichbar. `dvh` misst, was gerade wirklich zu sehen
+     ist. Die `vh`-Zeile bleibt als Rückfall für ältere Browser stehen. */
   height: 100vh;
+  height: 100dvh;
+
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+
+  /* Ohne diese Zeile vergrößert iOS beim Drehen ins Querformat die Schrift
+     eigenmächtig und die Tabellen brechen um. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+
+  -webkit-tap-highlight-color: rgba(212, 162, 76, .18);
 }
 
 button, select, input {
@@ -31,10 +80,31 @@ button, select, input {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 5px 9px;
+  /* Unterbindet die 300-ms-Wartezeit auf einen möglichen Doppeltipp. */
+  touch-action: manipulation;
 }
 button { cursor: pointer; }
 button:hover:not(:disabled) { border-color: var(--accent); }
+button:active:not(:disabled) { background: var(--line); }
 button:disabled { opacity: .4; cursor: default; }
+
+:where(button, select, input, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Safari zeichnet `select` sonst als hellgraue Systemschaltfläche mit
+   dunkler Schrift auf dunklem Grund. Eigener Pfeil, weil `appearance: none`
+   den systemeigenen entfernt. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 26px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239aa3b2' stroke-width='1.4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 10px 6px;
+}
 
 /* ---------------------------------------------------------------- Topbar */
 .topbar {
@@ -42,9 +112,11 @@ button:disabled { opacity: .4; cursor: default; }
   align-items: center;
   gap: 20px;
   padding: 10px 16px;
+  padding-top: calc(10px + var(--safe-top));
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
+  flex: none;
 }
 .brand { display: flex; align-items: center; gap: 8px; }
 .brand strong { color: var(--accent); letter-spacing: .3px; }
@@ -55,6 +127,7 @@ button:disabled { opacity: .4; cursor: default; }
   background: var(--panel-2);
   border: 1px solid var(--line);
   color: var(--muted);
+  white-space: nowrap;
 }
 .mode.full { color: var(--accent); border-color: var(--accent); }
 
@@ -66,6 +139,7 @@ button:disabled { opacity: .4; cursor: default; }
   color: var(--muted);
   gap: 3px;
 }
+.controls select { max-width: 100%; }
 
 .budget { margin-left: auto; min-width: 190px; }
 .budget-bar {
@@ -99,32 +173,83 @@ button:disabled { opacity: .4; cursor: default; }
   border-bottom: 1px solid var(--accent);
   color: var(--accent);
   font-size: 13px;
+  flex: none;
 }
 .banner[hidden] { display: none; }
 .banner span { flex: 1; }
 .banner button { background: transparent; border-color: var(--accent); color: var(--accent); }
 .banner.busy { opacity: .7; pointer-events: none; }
 
+/* ----------------------------------------------------------------- Reiter */
+/* Nur auf dem Telefon eingeblendet. Dort ist Höhe die knappe Ressource:
+   Katalog und Liste übereinander lassen von beiden zu wenig übrig, um
+   darin zu arbeiten. */
+.tabs {
+  display: none;
+  flex: none;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.tabs button {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 10px 8px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.tabs button[aria-selected="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.tabs .count {
+  font-size: 11px;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.tabs .count.bad { color: var(--error); border-color: var(--error); }
+
 /* ------------------------------------------------------------------ Grid */
 main {
   flex: 1;
   display: grid;
-  grid-template-columns: 300px 1fr 0;
+  grid-template-columns: clamp(240px, 22vw, 320px) 1fr 0;
   min-height: 0;
   transition: grid-template-columns .18s ease;
 }
-main.with-inspector { grid-template-columns: 300px 1fr 420px; }
+main.with-inspector {
+  grid-template-columns: clamp(240px, 22vw, 320px) 1fr clamp(340px, 32vw, 460px);
+}
 
 .catalog, .army, .inspector {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   border-right: 1px solid var(--line);
 }
 .inspector { border-right: none; border-left: 1px solid var(--line); background: var(--panel); }
 .inspector[hidden] { display: none; }
 
-.scroll { overflow-y: auto; padding: 10px 12px; flex: 1; min-height: 0; }
+.scroll {
+  overflow-y: auto;
+  padding: 10px 12px;
+  flex: 1;
+  min-height: 0;
+  /* Verhindert, dass das Wischen am Listenende die ganze Seite mitzieht —
+     auf iOS sonst der Gummiband-Effekt hinter dem geöffneten Panel. */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
 
 .catalog-head, .army-head {
   display: flex;
@@ -132,9 +257,10 @@ main.with-inspector { grid-template-columns: 300px 1fr 420px; }
   padding: 10px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
+  flex: none;
 }
 .catalog-head input { flex: 1; min-width: 0; }
-.army-head input { flex: 1; background: transparent; border-color: transparent; font-weight: 600; }
+.army-head input { flex: 1; min-width: 0; background: transparent; border-color: transparent; font-weight: 600; }
 .army-head input:focus { border-color: var(--line); }
 
 /* --------------------------------------------------------------- Catalog */
@@ -155,11 +281,17 @@ main.with-inspector { grid-template-columns: 300px 1fr 420px; }
   cursor: pointer;
 }
 .cat-item:hover { background: var(--panel-2); }
+.cat-item:active { background: var(--line); }
 .cat-item .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cat-item .pts { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
 .cat-item .add {
   padding: 1px 7px;
   line-height: 1.4;
+  flex: none;
+  /* Am Zeigegerät erscheint das Plus erst, wenn die Maus die Zeile trifft —
+     ruhige Liste, ohne dass etwas fehlt. Ohne Hover-Fähigkeit wäre genau
+     dieses Erscheinen der Fehler: Der Knopf bliebe unsichtbar. Der Block
+     "Finger statt Maus" weiter unten stellt ihn deshalb dauerhaft an. */
   opacity: 0;
 }
 .cat-item:hover .add, .cat-item:focus-within .add { opacity: 1; }
@@ -183,7 +315,8 @@ main.with-inspector { grid-template-columns: 300px 1fr 420px; }
   cursor: pointer;
 }
 .entry-main:hover { background: var(--panel-2); }
-.entry-main .nm { flex: 1; font-weight: 500; }
+.entry-main:active { background: var(--line); }
+.entry-main .nm { flex: 1; min-width: 0; font-weight: 500; }
 .entry-main .pts { color: var(--muted); font-variant-numeric: tabular-nums; }
 .entry-main .warlord { color: var(--accent); }
 .entry-opts {
@@ -193,7 +326,7 @@ main.with-inspector { grid-template-columns: 300px 1fr 420px; }
   padding: 0 9px 8px;
   font-size: 12px;
 }
-.entry-opts select { font-size: 12px; padding: 3px 6px; max-width: 190px; }
+.entry-opts select { font-size: 12px; padding: 3px 22px 3px 6px; max-width: 190px; }
 .entry-opts button { font-size: 12px; padding: 3px 7px; }
 
 .badge {
@@ -202,6 +335,7 @@ main.with-inspector { grid-template-columns: 300px 1fr 420px; }
   border-radius: 10px;
   border: 1px solid var(--line);
   white-space: nowrap;
+  align-self: center;
 }
 .badge.ok { color: var(--ok); border-color: var(--ok); }
 .badge.bad { color: var(--error); border-color: var(--error); }
@@ -211,8 +345,10 @@ main.with-inspector { grid-template-columns: 300px 1fr 420px; }
   border-top: 1px solid var(--line);
   max-height: 30vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 8px 12px;
   background: var(--panel);
+  flex: none;
 }
 #findings:empty { display: none; }
 .finding {
@@ -227,7 +363,7 @@ main.with-inspector { grid-template-columns: 300px 1fr 420px; }
 .finding .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: none; }
 .finding.error .dot { background: var(--error); }
 .finding.warning .dot { background: var(--warning); }
-.finding .msg { flex: 1; }
+.finding .msg { flex: 1; min-width: 0; }
 .finding .basis {
   font-size: 10px;
   padding: 1px 5px;
@@ -246,11 +382,29 @@ main.with-inspector { grid-template-columns: 300px 1fr 420px; }
   gap: 10px;
   padding: 12px;
   border-bottom: 1px solid var(--line);
+  flex: none;
 }
 .inspector-head h2 { margin: 0; font-size: 17px; }
 .inspector-head .sub { font-size: 12px; color: var(--muted); }
-.inspector-buttons { margin-left: auto; display: flex; gap: 4px; }
+.inspector-buttons { margin-left: auto; display: flex; gap: 4px; flex: none; }
 #insp-pin[aria-pressed="true"] { border-color: var(--accent); }
+
+/* Griff des Bottom Sheets — nur im Sheet-Modus sichtbar (siehe unten). */
+.sheet-handle { display: none; }
+
+/* Abdeckung hinter dem Panel, sobald es als Sheet über der Liste liegt.
+   Sie erledigt zwei Dinge: Ein Tipp daneben schließt das Panel, und
+   Berührungen erreichen die Liste darunter nicht mehr. */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+  z-index: 39;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+}
+.sheet-backdrop[hidden] { display: none; }
 
 .sec { margin-bottom: 16px; }
 .sec > h3 {
@@ -293,11 +447,13 @@ table.stats th, table.stats td {
 }
 table.stats th { color: var(--muted); font-weight: 500; font-size: 11px; }
 table.stats td.nm, table.stats th.nm { text-align: left; }
-.table-wrap { overflow-x: auto; }
+/* Die Waffentabelle hat sieben Spalten und passt auf keinem Telefon in die
+   Breite. Sie scrollt deshalb für sich — nicht die ganze Seite. */
+.table-wrap { overflow-x: auto; overscroll-behavior-x: contain; }
 
 .ability { margin-bottom: 9px; }
 .ability .nm { font-weight: 600; }
-.ability .body { font-size: 13px; color: #cdd3de; }
+.ability .body { font-size: 13px; color: #cdd3de; overflow-wrap: anywhere; }
 .ability .body ul { margin: 4px 0; padding-left: 18px; }
 .ability .kind {
   font-size: 10px;
@@ -327,7 +483,7 @@ table.stats td.nm, table.stats th.nm { text-align: left; }
 .strat .hd { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
 .strat .cp { color: var(--accent); font-weight: 600; font-size: 12px; }
 .strat .when { font-size: 11px; color: var(--muted); }
-.strat .body { font-size: 12.5px; color: #cdd3de; }
+.strat .body { font-size: 12.5px; color: #cdd3de; overflow-wrap: anywhere; }
 
 .derived-hint {
   font-size: 12px;
@@ -342,8 +498,37 @@ table.stats td.nm, table.stats th.nm { text-align: left; }
   padding: 8px 12px;
   font-size: 11px;
   color: var(--muted);
+  flex: none;
 }
 .inspector-foot a { color: var(--accent); }
+
+/* ------------------------------------------------------------------ Export */
+.sheet-dialog {
+  width: min(560px, calc(100vw - 24px));
+  max-height: 80dvh;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 0;
+}
+.sheet-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+.sheet-dialog form { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.sheet-dialog h2 { margin: 0; font-size: 16px; }
+.sheet-dialog textarea {
+  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px;
+  min-height: 26dvh;
+  resize: vertical;
+  width: 100%;
+}
+.sheet-dialog .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.sheet-dialog .row .status { color: var(--muted); font-size: 12px; flex: 1; min-width: 120px; }
+.sheet-dialog .row button { min-height: var(--touch); }
 
 /* ----------------------------------------------------------------- Misc */
 .empty {
@@ -355,84 +540,247 @@ table.stats td.nm, table.stats th.nm { text-align: left; }
   justify-content: center;
   background: var(--bg);
   text-align: center;
-  padding: 20px;
+  padding: calc(20px + var(--safe-top)) calc(20px + var(--safe-right))
+           calc(20px + var(--safe-bottom)) calc(20px + var(--safe-left));
+  overflow-y: auto;
   z-index: 50;
 }
 .empty.show { display: flex; }
+.empty h1 { font-size: clamp(19px, 5vw, 30px); }
 .empty pre {
   background: var(--panel-2);
   border: 1px solid var(--line);
   padding: 10px 16px;
   border-radius: var(--radius);
   color: var(--accent);
+  max-width: 100%;
+  overflow-x: auto;
 }
 .empty .hint { color: var(--muted); font-size: 13px; max-width: 460px; }
 
 .attribution {
   padding: 6px 16px;
+  padding-bottom: calc(6px + var(--safe-bottom));
   font-size: 11px;
   color: var(--muted);
   border-top: 1px solid var(--line);
   background: var(--panel);
+  flex: none;
 }
 .attribution a { color: var(--muted); }
 
 .muted { color: var(--muted); }
 .empty-note { color: var(--muted); font-size: 12.5px; font-style: italic; }
 
-@media (max-width: 900px) {
-  main, main.with-inspector { grid-template-columns: 1fr; }
+/* ================================================================= Geräte */
+
+/* ----------------------------------------- Tablet und schmale Fenster
+   Ab hier reicht die Breite nicht mehr für drei Spalten nebeneinander:
+   Katalog und Liste behalten ihren Platz, der Inspektor legt sich als
+   Sheet darüber. Das trifft das iPad im Hochformat (744–1024 px) — dort
+   wäre die Telefonaufteilung mit gestapelten Panels reine Verschwendung:
+   Auf 1180 px Höhe ist Platz für beide Spalten. */
+@media (max-width: 1024px) {
+  main, main.with-inspector { grid-template-columns: clamp(200px, 30vw, 300px) 1fr; }
+
   .inspector {
     position: fixed;
-    inset: auto 0 0 0;
-    height: 72vh;
-    border-left: none;
-    border-top: 1px solid var(--line);
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    width: min(440px, 82vw);
+    padding-top: var(--safe-top);
+    padding-right: var(--safe-right);
+    padding-bottom: var(--safe-bottom);
+    border-left: 1px solid var(--line);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, .45);
     z-index: 40;
+    animation: sheet-in-right .18s ease-out;
   }
-  .catalog { max-height: 34vh; }
+
+  /* Anheften ergibt nur Sinn, solange das Panel eine eigene Spalte ist. Als
+     Sheet über der Liste wäre ein angehefteter Inspektor eine Falle: Er
+     verdeckt die Liste, und weder ✕ noch Esc noch der Tipp daneben kämen
+     gegen die Anheftung an. */
+  #insp-pin { display: none; }
 }
 
-/* Auf dem Telefon ist Höhe die knappe Ressource. Ungebremst belegte die
-   Kopfzeile 222 von 844 Pixeln, bevor eine einzige Einheit zu sehen war —
-   ein Viertel des Bildschirms für drei Auswahlfelder. */
-@media (max-width: 600px) {
-  .topbar { padding: 6px 10px; gap: 8px 10px; }
+/* --------------------------------------------------------- Telefon
+   Unter 620 px stehen Katalog und Liste nicht mehr nebeneinander. Statt
+   sie übereinander zu quetschen — 30 % Bildschirm für den Katalog, in dem
+   dann vier Einheiten sichtbar sind — bekommt jede die volle Fläche und
+   die Reiterleiste schaltet um. */
+@media (max-width: 620px) {
+  .topbar { padding: 6px 10px; padding-top: calc(6px + var(--safe-top)); gap: 8px 10px; }
   .brand strong { font-size: 13px; }
   .mode { font-size: 10px; padding: 1px 6px; }
 
   .controls { flex: 1 1 100%; gap: 6px; order: 3; }
   .controls label { flex: 1 1 0; min-width: 0; font-size: 10px; gap: 1px; }
-  .controls select { width: 100%; padding: 4px 6px; }
+  .controls select { width: 100%; }
 
   .budget { margin-left: auto; min-width: 0; flex: 1 1 120px; }
   #budget-text { font-size: 11px; }
   .actions { gap: 4px; }
-  .actions button { padding: 4px 8px; }
 
-  .catalog { max-height: 30vh; }
-  .inspector { height: 78vh; }
+  .tabs { display: flex; }
+
+  main, main.with-inspector { grid-template-columns: 1fr; }
+  main.show-catalog > .army,
+  main.show-army > .catalog { display: none; }
+  .catalog { border-right: none; }
+
+  /* Auf dem Telefon kommt der Inspektor von unten: Der Daumen erreicht die
+     untere Bildschirmhälfte, die obere nicht. */
+  .inspector {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: 82dvh;
+    border-left: none;
+    border-top: 1px solid var(--line);
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, .45);
+    padding-top: 0;
+    animation: sheet-in-up .18s ease-out;
+  }
+  .sheet-handle {
+    display: block;
+    width: 38px;
+    height: 4px;
+    margin: 8px auto 2px;
+    border-radius: 2px;
+    background: var(--line);
+    flex: none;
+  }
+  .inspector-head { padding: 8px 12px 12px; }
+
+  #findings { max-height: 34dvh; }
 
   /* Die Attribution ist eine Auflage (§1.1) und bleibt sichtbar — aber
      einzeilig statt als dreizeiliger Block. */
   .attribution {
     padding: 4px 10px;
+    padding-bottom: calc(4px + var(--safe-bottom));
     font-size: 10px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  /* Fingerfreundliche Trefferflächen. */
-  .cat-item { padding: 8px 7px; }
-  .cat-item .add { opacity: 1; padding: 3px 10px; }
-  .entry-main { padding: 10px 9px; }
-  .inspector-head button { padding: 6px 10px; }
 }
 
-/* Als Web-App vom Home-Bildschirm gestartet gibt es keine Browserleiste;
-   der Platz unten gehört dann der Systemgeste. */
-@supports (padding: env(safe-area-inset-bottom)) {
-  .attribution { padding-bottom: calc(4px + env(safe-area-inset-bottom)); }
-  .inspector { padding-bottom: env(safe-area-inset-bottom); }
+/* -------------------------------------------------- Flaches Querformat
+   Telefon quer: 390 px Höhe. Ein Sheet über 82 % davon lässt nichts übrig,
+   und die Kopfzeile fräße den Rest — hier kommt der Inspektor von rechts. */
+@media (max-height: 520px) and (max-width: 1024px) {
+  .topbar { padding-top: calc(4px + var(--safe-top)); padding-bottom: 4px; gap: 4px 10px; }
+  .brand strong { font-size: 12px; }
+  /* Die Anzeigetiefe steht auch im Inspektor an jeder Karte. Quer auf dem
+     Telefon ist der Platz dafür besser in Einheiten investiert. */
+  .mode { display: none; }
+
+  /* Beschriftung neben das Feld statt darüber: spart je Auswahlfeld eine
+     Textzeile — bei drei Feldern die Höhe einer ganzen Katalogzeile. */
+  .controls { gap: 6px 10px; }
+  .controls label {
+    flex-direction: row;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+  }
+  .controls label select { flex: 1; min-width: 0; }
+
+  /* Quer ist Höhe die knappe Ressource, nicht Breite: Die Kopfzeile bricht
+     hier auf zwei Reihen um und nahm mit vollen Fingergrößen fast ein
+     Drittel der 390 px ein, bevor eine einzige Einheit zu sehen war. In
+     dieser Lage sind 34 px am Bedienelement der bessere Handel. */
+  .topbar button, .topbar select, .topbar input { min-height: 34px; }
+  .budget { min-width: 130px; }
+  .inspector {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    width: min(420px, 60vw);
+    height: auto;
+    border-radius: 0;
+    border-left: 1px solid var(--line);
+    border-top: none;
+    padding-top: var(--safe-top);
+    animation: sheet-in-right .18s ease-out;
+  }
+  .sheet-handle { display: none; }
+  #findings { max-height: 40dvh; }
+
+  /* Dreizeilig wäre die Auflage aus §1.1 hier ein Zehntel des Bildschirms. */
+  .attribution {
+    padding: 3px 10px;
+    padding-bottom: calc(3px + var(--safe-bottom));
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* ------------------------------------------------- Finger statt Maus
+   Unabhängig von der Breite: Wo nicht gezeigt, sondern getippt wird, muss
+   alles sichtbar und groß genug sein. Ein iPad im Querformat ist breiter
+   als mancher Laptop und fällt trotzdem hierher. */
+@media (hover: none) {
+  /* Der wichtigste Punkt der Datei: Ohne Maus gibt es kein `:hover`, und
+     ein Knopf mit `opacity: 0` bleibt für immer unsichtbar. Auf dem iPad
+     im Hochformat war das Plus damit nicht auffindbar — die Einheit ließ
+     sich nur noch über Umwege zur Liste hinzufügen. */
+  .cat-item .add { opacity: 1; }
+  .cat-item:hover, .entry-main:hover { background: none; }
+}
+
+@media (pointer: coarse) {
+  /* Unter 16 px zoomt Safari beim Antippen eines Eingabefelds die ganze
+     Seite heran und zoomt nicht von selbst zurück. Das ist kein
+     Schönheitsfehler: Danach ist die Bedienung verschoben, bis der Nutzer
+     von Hand herauszoomt. Die 16 px sind deshalb Pflicht, nicht Geschmack. */
+  input, select, textarea { font-size: 16px; }
+
+  button, select, input { min-height: var(--touch); }
+  /* Der Innenabstand bleibt klein: Das Plus in der Zeile bringt seine
+     44 px schon mit, und doppelt gezählt wären die Zeilen 62 px hoch —
+     ein Drittel weniger Einheiten pro Bildschirm, ohne dass die
+     Trefferfläche dadurch besser würde. */
+  .cat-item { padding: 4px 7px; min-height: var(--touch); }
+  .cat-item .add { padding: 6px 12px; }
+  .entry-main { padding: 10px 9px; min-height: var(--touch); }
+  .entry-opts { gap: 8px; padding-bottom: 10px; }
+  .entry-opts select, .entry-opts button { font-size: 16px; max-width: 100%; }
+  .tabs button { min-height: var(--touch); }
+  .link-row { padding: 7px 0; }
+  .link-row button { min-height: 32px; }
+
+  /* Die Knöpfe der Kopfzeile behalten ihre Beschriftung, wachsen aber auf
+     Fingergröße. */
+  .actions button { padding: 6px 12px; }
+  .inspector-head button { padding: 6px 12px; }
+  .banner button { min-height: var(--touch); }
+}
+
+/* Die Zeitangaben sind kurz; wer Bewegung abbestellt hat, bekommt keine. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+@keyframes sheet-in-up {
+  from { transform: translateY(14px); opacity: .4; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes sheet-in-right {
+  from { transform: translateX(16px); opacity: .4; }
+  to { transform: none; opacity: 1; }
 }

@@ -208,6 +208,25 @@ def render(data: dict) -> str:
         f"{rules_js}\n{app_js}\n"
         "</script>",
     )
+
+    # Symbol und Manifest liegen im Serverbetrieb unter /static/. Die
+    # Offline-Datei wird aus dem Dateisystem geöffnet — dort gibt es kein
+    # /static/, und jede solche Zeile wäre ein Ladefehler. Das Manifest
+    # bringt hier ohnehin nichts: Ohne Server ist die Datei die App.
+    for tag in (
+        '<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">\n',
+        '<link rel="manifest" href="/static/manifest.webmanifest">\n',
+    ):
+        html = html.replace(tag, "")
+
+    # Der Zusammenbau steht und fällt mit wörtlichen Treffern oben. Ändert
+    # jemand index.html, sollen die Ersetzungen hier auffallen und nicht erst
+    # auf einem Telefon ohne Netz, wo die Datei dann halb geladen dasteht.
+    if "/static/" in html:
+        raise RuntimeError(
+            "Die Offline-Datei verweist noch auf /static/ — index.html wurde "
+            "geändert, ohne app/build_offline.py nachzuziehen."
+        )
     return html
 
 

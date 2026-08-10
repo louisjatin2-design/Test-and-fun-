@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img"
+     aria-label="warhammer-meta">
+  <!-- App-Symbol. Der Inhalt bleibt im mittleren 80-%-Kreis, damit Android
+       ihn als "maskable icon" beschneiden kann, ohne die Klingen zu kappen. -->
+  <rect width="512" height="512" fill="#1c1f26"/>
+  <defs>
+    <g id="sword" fill="#d4a24c">
+      <path d="M256 96 L274 142 L274 318 L238 318 L238 142 Z"/>
+      <rect x="204" y="318" width="104" height="18" rx="6"/>
+      <rect x="245" y="336" width="22" height="54" rx="4"/>
+      <circle cx="256" cy="400" r="15"/>
+    </g>
+  </defs>
+  <use href="#sword" transform="rotate(38 256 256)"/>
+  <use href="#sword" transform="rotate(-38 256 256)" opacity=".85"/>
+</svg>

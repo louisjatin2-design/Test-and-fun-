@@ -35,6 +35,25 @@ let backend;
 
 const $ = (id) => document.getElementById(id);
 
+// ------------------------------------------------------------- Eingabegerät
+// Zwei Fragen, die das Verhalten ändern, und beide sind zur Laufzeit
+// veränderlich: Ein iPad bekommt eine Tastatur mit Trackpad angesteckt, ein
+// Fenster wird schmaler gezogen. Sie werden deshalb bei jedem Zugriff neu
+// beantwortet, nicht einmal beim Start.
+
+/** Gibt es einen Zeiger, der über etwas schweben kann, ohne zu klicken? */
+const canHover = () =>
+  window.matchMedia?.("(hover: hover)").matches ?? true;
+
+/**
+ * Liegt der Inspektor als Sheet über der Liste, statt eine eigene Spalte zu
+ * sein? Die Antwort steht im Stylesheet — dort entscheidet die Breite. Hier
+ * wird sie nur abgelesen, damit Breakpoint und Verhalten nicht mit der Zeit
+ * auseinanderlaufen.
+ */
+const sheetMode = () =>
+  getComputedStyle($("inspector")).position === "fixed";
+
 // ------------------------------------------------------------------ Backend
 // Zwei Betriebsarten hinter einer Schnittstelle:
 //
@@ -334,6 +353,18 @@ function wireEvents() {
     state.pinned = !state.pinned;
     $("insp-pin").setAttribute("aria-pressed", String(state.pinned));
   });
+  $("sheet-backdrop").addEventListener("click", closeInspector);
+
+  // Reiter — nur auf dem Telefon sichtbar, siehe styles.css.
+  $("tab-catalog").addEventListener("click", () => selectTab("catalog"));
+  $("tab-army").addEventListener("click", () => selectTab("army"));
+
+  wireExport();
+
+  // Vom Hoch- ins Querformat gedreht kann aus dem Sheet eine Spalte werden
+  // (und umgekehrt). Dann muss die Abdeckung mitziehen, sonst bleibt ein
+  // grauer Schleier über einer Ansicht, die gar kein Sheet mehr ist.
+  window.addEventListener("resize", syncBackdrop);
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !$("inspector").hidden) closeInspector();
@@ -343,6 +374,22 @@ function wireEvents() {
       event.preventDefault(); redo();
     }
   });
+}
+
+/** Telefonansicht: Katalog und Liste teilen sich die Fläche nicht, sie lösen
+ *  sich ab. Auf breiteren Geräten stehen beide nebeneinander und die Klassen
+ *  bleiben ohne Wirkung. */
+function selectTab(which) {
+  const main = document.querySelector("main");
+  main.classList.toggle("show-catalog", which === "catalog");
+  main.classList.toggle("show-army", which === "army");
+  $("tab-catalog").setAttribute("aria-selected", String(which === "catalog"));
+  $("tab-army").setAttribute("aria-selected", String(which === "army"));
+}
+
+function syncBackdrop() {
+  const open = !$("inspector").hidden;
+  $("sheet-backdrop").hidden = !(open && sheetMode());
 }
 
 async function undo() {
@@ -370,8 +417,25 @@ function render() {
   renderArmy();
   renderBudget();
   renderFindings();
+  renderTabs();
   $("undo").disabled = !state.history.length;
   $("redo").disabled = !state.future.length;
+}
+
+/**
+ * Zähler am Reiter "Liste".
+ *
+ * Auf dem Telefon ist die Liste beim Hinzufügen gar nicht zu sehen — der
+ * Katalog füllt den Bildschirm. Ohne Rückmeldung tippt man ins Leere und
+ * weiß nicht, ob die Einheit angekommen ist. Der Zähler schließt diese
+ * Lücke, und ein Regelbruch färbt ihn rot: Sonst bliebe auf dem Telefon
+ * unbemerkt, dass die Liste illegal geworden ist, weil die Meldungen im
+ * anderen Reiter stehen.
+ */
+function renderTabs() {
+  const badge = $("tab-count");
+  badge.textContent = String(state.list.entries.length);
+  badge.classList.toggle("bad", Boolean(state.validation?.errors));
 }
 
 function renderBudget(preview = null) {
@@ -438,9 +502,19 @@ function renderCatalog() {
         if (event.key === "Enter") openInspector(item.id);
         if (event.key === "+") addUnit(item);
       });
-      row.addEventListener("mouseenter", () =>
-        renderBudget((state.validation?.points_used ?? 0) + cheapestCost(item)));
-      row.addEventListener("mouseleave", () => renderBudget());
+      // Punktevorschau beim Überfahren. Am Touchscreen gibt es kein
+      // Überfahren: Dort schickt der Browser beim Antippen ein einmaliges
+      // `mouseenter` hinterher und nie das passende `mouseleave` — die
+      // Vorschau bliebe stehen und die Budgetleiste zeigte dauerhaft eine
+      // Zahl an, die niemand ausgelöst hat.
+      row.addEventListener("mouseenter", () => {
+        if (!canHover()) return;
+        renderBudget((state.validation?.points_used ?? 0) + cheapestCost(item));
+      });
+      row.addEventListener("mouseleave", () => {
+        if (!canHover()) return;
+        renderBudget();
+      });
 
       group.append(row);
     }
@@ -653,6 +727,7 @@ function openInspector(datasheetId, entryUid = null) {
   state.inspected = datasheetId;
   $("inspector").hidden = false;
   document.querySelector("main").classList.add("with-inspector");
+  syncBackdrop();
 
   $("insp-name").textContent = item.name;
   const cost = cheapestCost(item);
@@ -684,12 +759,18 @@ function openInspector(datasheetId, entryUid = null) {
   renderCatalog();
 
   loadContext(datasheetId);
-  if (entryUid) $("insp-close").focus();
+  // Als Sheet ist das Panel ein eigener Kontext: Der Fokus gehört hinein,
+  // sonst tippt die Tastatur weiter in die verdeckte Liste.
+  if (entryUid || sheetMode()) $("insp-close").focus();
 }
 
 function closeInspector() {
-  if (state.pinned) return;
+  // Angeheftet bleibt angeheftet — außer das Panel liegt als Sheet über der
+  // Liste. Dann verdeckt es sie, und "lässt sich nicht schließen" hieße
+  // "die Liste ist bis zum Neuladen weg".
+  if (state.pinned && !sheetMode()) return;
   $("inspector").hidden = true;
+  $("sheet-backdrop").hidden = true;
   document.querySelector("main").classList.remove("with-inspector");
   state.inspected = null;
   renderCatalog();
@@ -919,8 +1000,83 @@ function footer(item) {
 }
 
 // ------------------------------------------------------------------ Export
+//
+// Der Export lief früher über `alert()` und schrieb still in die
+// Zwischenablage. Beides trägt auf dem Telefon nicht:
+//
+// * `navigator.clipboard` gibt es nur im *secure context*. Wer die App im
+//   WLAN über `http://192.168.…` aufruft — der dokumentierte Weg aufs iPad —
+//   hat die API schlicht nicht. Der alte Code fing das mit `?.` ab und
+//   behauptete anschließend trotzdem, es sei kopiert worden.
+// * Aus einem `alert()` lässt sich nichts markieren. Ohne Zwischenablage
+//   war die Liste damit nicht aus der App herauszubekommen.
+//
+// Der Dialog zeigt den Text deshalb in einem Feld, aus dem man ihn zur Not
+// von Hand kopiert, bietet `navigator.share` an, wo es das gibt — und sagt,
+// was tatsächlich passiert ist.
+
+function wireExport() {
+  const dialog = $("export-dialog");
+
+  $("export-copy").addEventListener("click", async () => {
+    const area = $("export-text");
+    const status = $("export-status");
+    area.focus();
+    area.setSelectionRange(0, area.value.length);
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(area.value);
+        status.textContent = "In die Zwischenablage kopiert.";
+        return;
+      }
+    } catch {
+      /* Weiter mit execCommand — manche Browser verweigern erst beim Aufruf. */
+    }
+
+    const copied = document.execCommand?.("copy") ?? false;
+    status.textContent = copied
+      ? "In die Zwischenablage kopiert."
+      : "Ohne HTTPS gibt der Browser die Zwischenablage nicht frei — "
+        + "der Text ist markiert und lässt sich von Hand kopieren.";
+  });
+
+  $("export-share").addEventListener("click", async () => {
+    try {
+      await navigator.share({
+        title: state.list.name,
+        text: $("export-text").value,
+      });
+    } catch {
+      /* Abbrechen im Teilen-Menü ist kein Fehler. */
+    }
+  });
+
+  // Ein Tipp neben den Dialog schließt ihn — auf dem Telefon der erwartete
+  // Weg zurück, weil der Dialog fast den ganzen Bildschirm einnimmt.
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+}
 
 function exportList() {
+  const text = exportText();
+  const dialog = $("export-dialog");
+
+  // `<dialog>` fehlt nur noch in sehr alten Browsern; dort bleibt der alte Weg.
+  if (typeof dialog?.showModal !== "function") {
+    navigator.clipboard?.writeText(text).catch(() => {});
+    alert(text);
+    return;
+  }
+
+  $("export-text").value = text;
+  $("export-status").textContent = "";
+  $("export-share").hidden = typeof navigator.share !== "function";
+  dialog.showModal();
+}
+
+function exportText() {
   const lines = [
     state.list.name,
     `${state.validation?.points_used ?? 0}/${state.list.points_limit} Punkte`,
@@ -947,9 +1103,7 @@ function exportList() {
     lines.push(`${entry.model_count}x ${entryCard?.name ?? entry.datasheet_id}` +
       ` (${points})${extras.length ? ` [${extras.join(", ")}]` : ""}`);
   }
-  const text = lines.join("\n");
-  navigator.clipboard?.writeText(text).catch(() => {});
-  alert(`${text}\n\n(in die Zwischenablage kopiert)`);
+  return lines.join("\n");
 }
 
 // ------------------------------------------------------------ Live-Updates
