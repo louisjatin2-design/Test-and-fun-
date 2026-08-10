@@ -126,19 +126,51 @@ function serverBackend() {
   };
 }
 
-function offlineBackend(data) {
-  const contexts = new Map();
+/** Eine Fraktion ohne Daten — für "noch nichts gewählt". */
+const KEINE_FRAKTION = {
+  cards: [], enhancements: {}, stratagems: {},
+  stratagems_by_detachment: {}, synergies: {},
+};
 
-  const contextFor = (factionId) => {
-    if (!contexts.has(factionId)) {
-      contexts.set(factionId, WHRules.buildContext({
-        cards: data.cards[factionId] ?? [],
-        enhancements: data.enhancements[factionId] ?? {},
+function offlineBackend(data) {
+  /**
+   * Die *eine* Fraktion, die gerade im Speicher liegt.
+   *
+   * Die Datei bringt alle Fraktionen mit, jede in einem eigenen
+   * `<script type="application/json">`. Gelesen wird immer nur die
+   * ausgewählte: Für den Listenbau braucht man genau eine, und die anderen
+   * neunzehn wären auf einem Telefon reine Last — 18 MB Text werden als
+   * Objektbaum zu einem Vielfachen davon. Reicht der Speicher nicht, bleibt
+   * die Fraktionsauswahl leer, und man sieht nicht, warum.
+   *
+   * Deshalb genau ein Platz und kein Cache: Ein Wechsel wirft die vorige
+   * Fraktion weg. Das kostet beim Zurückwechseln ein neues `JSON.parse` —
+   * Millisekunden, gegen die es hier nicht geht.
+   */
+  let aktuell = null;
+
+  const use = (factionId) => {
+    if (aktuell && aktuell.id === factionId) return aktuell;
+
+    const slot = (data.faction_slots ?? {})[factionId];
+    const tag = slot === undefined
+      ? null
+      : document.getElementById(`wh-faction-${slot}`);
+    const part = tag ? JSON.parse(tag.textContent) : KEINE_FRAKTION;
+
+    aktuell = {
+      id: factionId,
+      part,
+      context: WHRules.buildContext({
+        cards: part.cards ?? [],
+        enhancements: part.enhancements ?? {},
         ruleset: data.ruleset,
-      }));
-    }
-    return contexts.get(factionId);
+      }),
+    };
+    return aktuell;
   };
+
+  const contextFor = (factionId) => use(factionId).context;
 
   const check = (list) => {
     const normalised = WHRules.normaliseList(list, data.meta.ruleset_version);
@@ -150,13 +182,16 @@ function offlineBackend(data) {
     meta: async () => data.meta,
     factions: async () => data.factions,
     detachments: async (id) => data.detachments[id] ?? [],
-    factionData: async (id) => ({
-      faction_id: id,
-      cards: data.cards[id] ?? [],
-      enhancements: data.enhancements[id] ?? {},
-      stratagems: data.stratagems[id] ?? {},
-      stratagems_by_detachment: data.stratagems_by_detachment[id] ?? {},
-    }),
+    factionData: async (id) => {
+      const { part } = use(id);
+      return {
+        faction_id: id,
+        cards: part.cards ?? [],
+        enhancements: part.enhancements ?? {},
+        stratagems: part.stratagems ?? {},
+        stratagems_by_detachment: part.stratagems_by_detachment ?? {},
+      };
+    },
     validate: async (list) => check(list),
     applyPatch: async (list, patch) => {
       const start = WHRules.normaliseList(list, data.meta.ruleset_version);
@@ -166,8 +201,8 @@ function offlineBackend(data) {
     // Die regelbasierte Synergie (§4.1) ist vorgerechnet und liegt als
     // Daten in der Datei — sie hängt nur an den Regeln, nicht am Server.
     unitContext: async (id) => {
-      const faction = state.list.faction_id;
-      const treffer = (data.synergies?.[faction] ?? {})[id] ?? [];
+      const { part } = use(state.list.faction_id);
+      const treffer = (part.synergies ?? {})[id] ?? [];
       const counts = {};
       for (const eintrag of treffer) {
         counts[eintrag.kind] = (counts[eintrag.kind] ?? 0) + 1;

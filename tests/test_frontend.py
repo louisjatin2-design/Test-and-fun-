@@ -229,6 +229,56 @@ def test_daten_stehen_nicht_im_selben_script_wie_der_code():
     assert daten < html.index(marke) < datenende
 
 
+def test_beim_oeffnen_wird_nur_der_kern_gelesen():
+    """Zwanzig Fraktionen einzulesen, um eine zu spielen, ist die Last, die
+    ein Telefon nicht trägt.
+
+    Die Datei bringt weiterhin alles mit — es bleibt *eine* Datei, es wird
+    nichts nachgeladen. Aber jede Fraktion liegt in einem eigenen Element,
+    und app.js liest davon nur das der ausgewählten. Beim Öffnen sind es
+    damit ein paar Kilobyte statt zweistelliger Megabyte; aus 18 MB Text
+    würde sonst ein Objektbaum um ein Vielfaches darüber.
+    """
+    import json
+
+    from app.build_offline import render
+
+    data = {
+        "meta": {}, "factions": [{"id": "AA", "name": "A"}, {"id": "BB", "name": "B"}],
+        "cards": {"AA": [{"id": "A1", "name": "Aaa-Einheit"}],
+                  "BB": [{"id": "B1", "name": "Bbb-Einheit"}]},
+        "enhancements": {"AA": {}, "BB": {}},
+        "stratagems": {"AA": {}, "BB": {}},
+        "stratagems_by_detachment": {"AA": {}, "BB": {}},
+        "synergies": {"AA": {}, "BB": {}},
+    }
+    html = render(data)
+
+    kern = re.search(
+        r'<script type="application/json" id="wh-data">(.*?)</script>', html, re.S)
+    bloecke = re.findall(
+        r'<script type="application/json" id="wh-faction-(\d+)">(.*?)</script>',
+        html, re.S)
+
+    assert kern, "Kein Kern-Datenelement"
+    assert len(bloecke) == 2, "Je Fraktion ein eigener Block"
+
+    # Der Kern kennt die Fraktionen, aber keine einzige Einheit.
+    geladen = json.loads(kern.group(1))
+    assert geladen["faction_slots"] == {"AA": 0, "BB": 1}
+    assert "Aaa-Einheit" not in kern.group(1)
+    assert "Bbb-Einheit" not in kern.group(1)
+
+    # Und jede Einheit steht genau in *ihrem* Block.
+    inhalt = {nummer: json.loads(text) for nummer, text in bloecke}
+    assert inhalt["0"]["cards"][0]["name"] == "Aaa-Einheit"
+    assert inhalt["1"]["cards"][0]["name"] == "Bbb-Einheit"
+
+    # Das Gegenstück in app.js — ohne die Zeile bliebe der Block ungelesen.
+    app_js = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "wh-faction-" in app_js and "faction_slots" in app_js
+
+
 def test_offline_daten_koennen_das_script_element_nicht_beenden():
     """Regeltexte sind fremde Daten und enthalten HTML.
 
@@ -273,6 +323,27 @@ def test_startbildschirm_erklaert_den_fehlstart():
 
     app_js = (STATIC / "app.js").read_text(encoding="utf-8")
     assert 'bootDone' in app_js and 'init().catch(bootFailed)' in app_js
+
+
+def test_hinweis_schickt_niemanden_mehr_zu_safari():
+    """Der Rat, den die Datei zuerst gab, war falsch.
+
+    „Datei antippen, Teilen, Browser wählen" stimmte bis iOS 17. Seit iOS 18
+    öffnet Safari keine lokalen HTML-Dateien mehr, und Quick Look — was man
+    beim Antippen in „Dateien" bekommt — führt bei HTML grundsätzlich kein
+    JavaScript aus. Wer diesem Rat folgt, sucht eine Option, die es nicht
+    gibt, und hält am Ende die Datei für kaputt.
+
+    Richtig ist: eine App, die lokale HTML-Dateien *mit* JavaScript
+    darstellt. Der Test haelt fest, dass der Hinweis das auch sagt.
+    """
+    noscript = INDEX[INDEX.index("<noscript>"):INDEX.index("</noscript>")]
+
+    assert "Safari" not in noscript or "nicht mehr" in noscript, (
+        "Der Hinweis darf nicht zu Safari schicken — das geht seit iOS 18 nicht")
+    assert "JavaScript" in noscript
+    # Der Kasten ist zugleich die Probe, mit der sich eine App prüfen lässt.
+    assert "Probe" in noscript or "prüfen" in noscript
 
 
 def test_helles_thema_mit_dunkler_variante():

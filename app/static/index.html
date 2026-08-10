@@ -34,8 +34,12 @@
      war der gemeldete Fehler auf iPad und iPhone.
 
      Zwei Fälle, zwei Texte:
-     * <noscript> greift, wenn JavaScript ausgeschaltet ist — auf iOS der
-       Normalfall, wenn die Datei in einer Vorschau statt in Safari liegt.
+     * <noscript> greift, wenn JavaScript ausgeschaltet ist. Auf iOS ist das
+       der Normalfall und *kein* Fehler der Datei: Wer sie in „Dateien"
+       antippt, bekommt Quick Look, und Quick Look führt bei HTML kein
+       JavaScript aus. Seit iOS 18 kann auch Safari keine lokalen
+       HTML-Dateien mehr öffnen. Der Kasten sagt deshalb nicht "aktiviere
+       JavaScript" — das lässt sich dort gar nicht —, sondern was zu tun ist.
      * #boot blendet sich nach kurzer Zeit von selbst ein und wird von
        app.js wieder entfernt, sobald der Start durch ist. Bleibt es stehen,
        ist JavaScript zwar an, aber unterwegs gescheitert; die Ursache
@@ -44,15 +48,19 @@
   <div class="boot boot-visible">
     <div class="boot-card">
       <div class="boot-mark" aria-hidden="true"></div>
-      <h1>JavaScript ist ausgeschaltet</h1>
-      <p>Diese Datei <em>ist</em> die App — Regeln, Daten und Prüfung stecken
-         darin und laufen im Browser. Ohne JavaScript bleiben alle Auswahlfelder
-         leer.</p>
+      <h1>Hier läuft kein JavaScript</h1>
+      <p>Diese Datei <em>ist</em> die App — Regeln, Daten, Prüfung und
+         Generator stecken darin und laufen im Gerät. Ohne JavaScript bleiben
+         alle Auswahlfelder leer. An der Datei liegt es nicht.</p>
       <p class="boot-hint"><strong>Auf iPad und iPhone:</strong> Tippt man die
-         Datei in „Dateien“ nur an, zeigt iOS eine Vorschau ohne JavaScript.
-         Stattdessen die Datei antippen, oben rechts auf <strong>Teilen</strong>
-         und dort einen Browser wählen — oder die App über den Rechner im
-         WLAN aufrufen.</p>
+         Datei in „Dateien“ an, zeigt iOS eine Vorschau (Quick Look) — und die
+         führt bei HTML grundsätzlich kein JavaScript aus. Seit iOS 18 kann
+         auch Safari lokale HTML-Dateien nicht mehr öffnen. Nötig ist eine App,
+         die lokale HTML-Dateien <em>mit</em> JavaScript darstellt: die Datei
+         über <strong>Teilen</strong> an sie übergeben.</p>
+      <p class="boot-note">Dieser Kasten ist zugleich die Probe: Erscheint er,
+         führt die App kein JavaScript aus. Erscheint stattdessen der Builder,
+         ist es die richtige.</p>
     </div>
   </div>
 </noscript>
@@ -62,12 +70,12 @@
     <div class="boot-mark" aria-hidden="true"></div>
     <h1 id="boot-title">Wird geladen …</h1>
     <p id="boot-text">Die Regeldaten werden eingelesen. Bleibt dieser Hinweis
-       stehen, ist die App <strong>nicht</strong> gestartet — dann liegt es an
-       einem der beiden Punkte unten.</p>
-    <p class="boot-hint" id="boot-hint">Auf iPad und iPhone: In einer Vorschau
-       läuft kein JavaScript; die Datei gehört in einen Browser. Und ist sie für
-       das Gerät zu groß, reicht der Speicher nicht — dann neu bauen, mit
-       <code>--faction</code> und nur den eigenen Fraktionen.</p>
+       stehen, ist die App <strong>nicht</strong> gestartet — dann liegt es am
+       Punkt unten.</p>
+    <p class="boot-hint" id="boot-hint">Auf iPad und iPhone: Ist die Datei für
+       das Gerät zu groß, reicht der Speicher nicht. Dann neu bauen, mit
+       <code>--faction</code> und nur den eigenen Fraktionen — eine einzelne
+       Fraktion liegt bei gut einem MB statt bei zwanzig.</p>
   </div>
 </div>
 
