@@ -130,12 +130,26 @@ Tippt man die Datei in **Dateien** nur an, zeigt iOS eine Vorschau — und die f
 Sagt die Datei beim Öffnen **„Wird geladen …"** und bleibt dabei stehen, hat sie es nicht bis zum Start geschafft. Zwei Ursachen kommen in Frage, und beide stehen auf dem Bildschirm: kein JavaScript (siehe oben) oder zu wenig Speicher. Gegen den Speicher hilft ein kleinerer Build — wer zwei Fraktionen spielt, braucht die anderen achtzehn nicht dabeizuhaben:
 
 ```bash
+python -m app.build_offline --list-factions
+```
+
+```bash
 python -m app.build_offline --faction SM --faction TAU --out dist/meine.html
 ```
 
-Der Build weist ab acht MB von sich aus darauf hin.
+Eine einzelne Fraktion liegt bei gut einem MB statt bei achtzehn. Der Build weist ab acht MB von sich aus darauf hin.
 
-**Was dabei früher schiefging.** Daten und Programm lagen in *einem* `<script>`: erst rund 13 MB Objektliteral, dann Regel-Engine und Oberfläche. Ein Objektliteral muss der JavaScript-Parser vollständig durchgearbeitet haben, bevor die erste Zeile Code läuft — scheitert er daran, fällt das ganze Element aus, Oberfläche inklusive. Übrig blieb eine Seite, die aussah wie die App und in der sich keine Fraktion auswählen ließ. Die Daten stehen jetzt in einem eigenen `<script type="application/json">`, sind für den JavaScript-Parser also gar nicht vorhanden, und `JSON.parse` liest sie in einem Zug. Und geht doch etwas schief, ist es ein gewöhnlicher Laufzeitfehler, den der Startbildschirm im Klartext anzeigt, statt dass die Seite stumm danebensteht.
+#### Was die Datei beim Öffnen tut — und was nicht
+
+Zwei Dinge, die beide am selben Fehlerbild hingen: eine Seite, die aussieht wie die App und in der sich keine Fraktion auswählen lässt. Die Auswahlfelder füllt JavaScript; läuft es nicht durch, bleiben sie leer, und sichtbar ist davon nichts.
+
+**Daten und Programm sind getrennt.** Früher lag beides in *einem* `<script>`: erst ein Objektliteral mit allen Regeldaten, dann Regel-Engine und Oberfläche. Ein Objektliteral muss der JavaScript-Parser vollständig durchgearbeitet haben, bevor die erste Zeile Code läuft — scheitert er daran, fällt das ganze Element aus, Oberfläche inklusive. Die Daten stehen jetzt in eigenen `<script type="application/json">`-Elementen und sind für den JavaScript-Parser damit gar nicht vorhanden.
+
+**Gelesen wird nur die gewählte Fraktion.** Jede Fraktion hat ihren eigenen Block. Beim Öffnen liest die Datei nur den Kern — Regelkonstanten, Fraktionsnamen, Detachments, rund 13 KB. Der Rest wird zu Objekten, sobald man eine Fraktion auswählt, und die vorige wird dabei freigegeben. Gemessen an einem Build mit 20 Fraktionen und 1.720 Einheiten: beim Öffnen **13 KB statt 18 MB**, im Betrieb ein Fraktionsblock unter einem MB. Für den Listenbau braucht man ohnehin genau eine Fraktion; die anderen neunzehn waren reine Last.
+
+Es bleibt dabei **eine einzige Datei**. Die Blöcke sind Elemente im selben Dokument — es wird nichts nachgeladen, und im Flugmodus ändert sich nichts.
+
+Und geht doch etwas schief, ist es ein gewöhnlicher Laufzeitfehler, den der Startbildschirm im Klartext anzeigt, statt dass die Seite stumm danebensteht.
 
 Reducer, Validator **und Generator** kommen dabei aus `app/static/rules.js` statt aus Python. Diese Doppelung ist der Preis dafür, dass ohne Server überhaupt validiert und gebaut werden kann — `tests/test_parity.py` treibt dieselben zufälligen Aktionsfolgen durch beide Engines und vergleicht Punkte, Legalität und jeden Meldungstext; für den Generator vergleicht er die gebauten Listen Eintrag für Eintrag.
 
@@ -242,7 +256,7 @@ Ein `python -m app.etl.wahapedia` von Hand wird ebenfalls bemerkt: Maßgeblich i
 pytest
 ```
 
-271 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
+272 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
 
 Der Parity-Test braucht `node` im PATH; fehlt es, überspringt er sich. Unter **Windows** kam er lange nur scheinbar durch: Python las die Ausgabe von Node mit der Locale-Codepage statt als UTF-8, und aus dem Gedankenstrich in jedem Meldungstext wurde ein Ersatzzeichen — 21 gemeldete Unterschiede zwischen zwei Engines, die in Wirklichkeit dasselbe sagten.
 

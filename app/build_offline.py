@@ -38,6 +38,13 @@ OFFLINE_SYNERGY_LIMIT = 6
 #: allen zwanzig (zweistellige MB) trennt.
 SIZE_HINT_MB = 8
 
+#: Diese Schlüssel hängen an einer bestimmten Fraktion und bekommen je
+#: Fraktion einen eigenen Block in der Datei (siehe ``_split``).
+PER_FACTION = (
+    "cards", "enhancements", "stratagems", "stratagems_by_detachment",
+    "synergies",
+)
+
 CONTEXT_REASON = (
     "Meta- und Synergiedaten brauchen die Turnierauswertung (Phasen 1–3) "
     "und die Synergie-Engine (Phase 5)."
@@ -245,6 +252,41 @@ def _payload(data: dict) -> str:
     return text.replace("</", "<\\/").replace("<!--", "\\u003c!--")
 
 
+def _split(data: dict) -> tuple[dict, list[str]]:
+    """Trennt den Kern von den Daten der einzelnen Fraktionen.
+
+    Der Kern ist winzig — Regelkonstanten, Fraktionsnamen, Detachments — und
+    wird beim Öffnen gelesen. Alles, was an einer *bestimmten* Fraktion hängt,
+    bekommt einen eigenen Block; app.js liest davon nur den, den man auswählt.
+
+    **Warum überhaupt.** Bis hierher las die Datei beim Öffnen alle zwanzig
+    Fraktionen auf einmal ein: 18 MB Text wurden zu einem Objektbaum, der ein
+    Vielfaches davon belegt. Auf einem Telefon oder älteren iPad ist der
+    Speicher je Seite eng, und wenn er nicht reicht, sieht man davon nichts
+    als eine Fraktionsauswahl, die leer bleibt. Für den Listenbau braucht man
+    ohnehin immer genau eine Fraktion — die anderen neunzehn sind reine Last.
+
+    Es bleibt dabei *eine* Datei: Die Blöcke sind Elemente im selben Dokument,
+    nichts wird nachgeladen. Der Browser hält sie als Text, und Text kostet
+    einen Bruchteil dessen, was ein Objektbaum kostet.
+    """
+    faction_ids = sorted(data.get("cards") or {})
+
+    core = {key: value for key, value in data.items() if key not in PER_FACTION}
+    #: Fraktion -> Nummer des Blocks. Über die Nummer statt über die
+    #: Fraktions-ID, damit die Element-ID keine Zeichen enthalten kann, die
+    #: `getElementById` nicht verträgt.
+    core["faction_slots"] = {fid: i for i, fid in enumerate(faction_ids)}
+
+    blocks = []
+    for fid in faction_ids:
+        blocks.append(_payload({
+            key: (data.get(key) or {}).get(fid, [] if key == "cards" else {})
+            for key in PER_FACTION
+        }))
+    return core, blocks
+
+
 def render(data: dict) -> str:
     """Setzt Oberfläche, Engine und Daten zu einer Datei zusammen."""
     html = (STATIC / "index.html").read_text(encoding="utf-8")
@@ -270,11 +312,20 @@ def render(data: dict) -> str:
     # gar nicht da. `JSON.parse` in app.js liest sie danach in einem Zug —
     # sparsamer, schneller, und ein Fehler dabei ist ein normaler Fehler
     # *im* Programm, den der Startbildschirm anzeigen kann.
+    #
+    # Und je Fraktion ein eigener Block (siehe `_split`): Beim Öffnen wird nur
+    # der Kern gelesen, der Rest erst, wenn man die Fraktion auswählt.
+    core, blocks = _split(data)
+    elemente = [f'<script type="application/json" id="wh-data">'
+                f"{_payload(core)}</script>"]
+    elemente += [
+        f'<script type="application/json" id="wh-faction-{index}">{block}</script>'
+        for index, block in enumerate(blocks)
+    ]
     html = html.replace(
         '<script src="/static/rules.js"></script>\n'
         '<script src="/static/app.js"></script>',
-        f'<script type="application/json" id="wh-data">{_payload(data)}</script>\n'
-        "<script>\n"
+        "\n".join(elemente) + "\n<script>\n"
         f"{rules_js}\n{app_js}\n"
         "</script>",
     )
@@ -318,9 +369,29 @@ def main(argv: list[str] | None = None) -> int:
         help="Anzeigetiefe der Regeltexte (PLAN.md §6.3). "
              "'full' nur für den eigenen Gebrauch.",
     )
+    parser.add_argument(
+        "--list-factions", action="store_true",
+        help="Nur die verfügbaren Fraktionen mit ihrer Kennung ausgeben. "
+             "Die braucht --faction.",
+    )
     args = parser.parse_args(argv)
 
     db.create_all()
+
+    # Ohne diese Liste ist `--faction` kaum zu benutzen: Die Kennungen stehen
+    # sonst nirgends, und wer die Datei kleiner bauen will, müsste raten.
+    if args.list_factions:
+        with db.session() as session:
+            vorhanden = collect(session, None, "derived")["factions"]
+        if not vorhanden:
+            print("Keine Regeldaten gefunden. Zuerst "
+                  "'python -m app.etl.wahapedia' ausführen.", file=sys.stderr)
+            return 1
+        breite = max(len(f["id"]) for f in vorhanden)
+        for faction in vorhanden:
+            print(f"  {faction['id']:<{breite}}  {faction['name']}")
+        return 0
+
     with db.session() as session:
         data = collect(session, args.faction, args.mode)
 
