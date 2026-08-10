@@ -65,7 +65,31 @@ const sheetMode = () =>
 //
 // Der Rest der Datei kennt nur `backend` und weiß nicht, welche gerade läuft.
 
-const OFFLINE = typeof window !== "undefined" && Boolean(window.WH_OFFLINE);
+/**
+ * Die eingebetteten Daten der Offline-Datei, oder `null` im Serverbetrieb.
+ *
+ * **Warum aus einem `<script type="application/json">` und nicht aus einer
+ * Zuweisung.** Früher schrieb der Build `window.WH_OFFLINE = { … }` in
+ * dasselbe `<script>`, in dem auch rules.js und app.js stehen. Bei allen
+ * Fraktionen sind das rund 13 MB Objektliteral, und ein Objektliteral muss
+ * der JavaScript-Parser vollständig durchlaufen, bevor auch nur die erste
+ * Zeile Code läuft. Scheitert er daran — auf iPhone und iPad ist der
+ * Arbeitsspeicher je Seite knapp —, dann fällt das *ganze* Script aus:
+ * Reducer, Validator und Oberfläche gleich mit. Sichtbar war davon nichts
+ * als eine Fraktionsauswahl, die leer blieb.
+ *
+ * In einem eigenen `<script type="application/json">` ist die Datenmenge
+ * für den JavaScript-Parser unsichtbar; `JSON.parse` liest sie danach in
+ * einem Rutsch und ist dabei deutlich sparsamer. Und geht es doch schief,
+ * ist es ein Fehler *in* `init()` — der Startbildschirm zeigt ihn an,
+ * statt dass die Seite tot dasteht.
+ */
+function offlineData() {
+  const tag = document.getElementById("wh-data");
+  if (tag) return JSON.parse(tag.textContent);
+  // Rückfall für ältere Offline-Dateien, die noch eine Zuweisung enthalten.
+  return window.WH_OFFLINE ?? null;
+}
 
 function serverBackend() {
   return {
@@ -102,8 +126,7 @@ function serverBackend() {
   };
 }
 
-function offlineBackend() {
-  const data = window.WH_OFFLINE;
+function offlineBackend(data) {
   const contexts = new Map();
 
   const contextFor = (factionId) => {
@@ -275,8 +298,41 @@ function cheapestCost(entryCard) {
 
 // ------------------------------------------------------------------- Start
 
+/** Startbildschirm weg — ab hier ist die Oberfläche bedienbar. */
+function bootDone() {
+  $("boot")?.remove();
+}
+
+/**
+ * Startbildschirm stehen lassen und erklären, woran es lag.
+ *
+ * Die Oberfläche dahinter bleibt bewusst unberührt: Ein halb aufgebauter
+ * Builder, in dem die Fraktionsliste leer ist, sieht aus wie ein bedienbares
+ * Programm und ist keines. Das war genau der Fehler auf dem iPad.
+ */
+function bootFailed(error) {
+  console.error(error);
+  const box = $("boot");
+  if (!box) {
+    alert(`Start fehlgeschlagen — ${error.message}`);
+    return;
+  }
+  box.classList.add("boot-visible", "boot-error");
+  $("boot-title").textContent = "Start fehlgeschlagen";
+  $("boot-text").textContent = String(error && error.message ? error.message : error);
+  // Nicht über `backend`: Scheitert schon das Einlesen der Daten, ist es noch
+  // gar nicht gesetzt — und dann stünde ausgerechnet in der Offline-Datei die
+  // Frage, ob der Server noch läuft. Das Datenelement selbst ist das
+  // verlässlichere Merkmal.
+  $("boot-hint").textContent = document.getElementById("wh-data") || window.WH_OFFLINE
+    ? "Die Datei ist vermutlich unvollständig oder für dieses Gerät zu groß. "
+      + "Neu bauen — am besten mit --faction und nur den Fraktionen, die du spielst."
+    : "Läuft der Server noch? Die Seite braucht ihn für Regeln und Validierung.";
+}
+
 async function init() {
-  backend = OFFLINE ? offlineBackend() : serverBackend();
+  const offline = offlineData();
+  backend = offline ? offlineBackend(offline) : serverBackend();
   state.meta = await backend.meta();
 
   const badge = $("mode-badge");
@@ -293,6 +349,7 @@ async function init() {
 
   if (!state.meta.has_data) {
     $("empty-state").classList.add("show");
+    bootDone();
     return;
   }
 
@@ -310,10 +367,13 @@ async function init() {
     $("faction").append(new Option(faction.name, faction.id));
   }
 
+  const limitList = state.meta.points_limits ?? [];
   const saved = restore();
   state.list = saved ?? {
     faction_id: "", detachment_id: "",
-    points_limit: state.meta.points_limits.at(-1) ?? 2000,
+    // Kein `.at(-1)`: Das gibt es erst ab iOS 15.4, und die Offline-Datei
+    // soll auch auf einem älteren iPad starten, das nur noch daliegt.
+    points_limit: limitList[limitList.length - 1] ?? 2000,
     ruleset_version: state.meta.ruleset_version,
     mfm_version: "", name: "Neue Liste", entries: [],
   };
@@ -334,6 +394,7 @@ async function init() {
   wireEvents();
   connectLiveUpdates();
   render();
+  bootDone();
 }
 
 async function loadDetachments(factionId) {
@@ -1384,8 +1445,4 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-init().catch((error) => {
-  console.error(error);
-  document.body.innerHTML =
-    `<pre style="padding:20px;color:#e0555a">Start fehlgeschlagen:\n${error.message}</pre>`;
-});
+init().catch(bootFailed);
