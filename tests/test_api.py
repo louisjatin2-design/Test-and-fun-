@@ -150,11 +150,36 @@ def test_incremental_meldet_kaputte_aktion(client):
     assert response.status_code == 400
 
 
-def test_kontext_endpunkt_ist_ehrlich_leer(client):
-    """Abschnitt 11 braucht Turnierdaten, die es noch nicht gibt."""
+def test_kontext_trennt_regel_und_turnierwissen(client):
+    """Abschnitt 11 — die beiden Signalfamilien aus §4 getrennt.
+
+    Die regelbasierte Hälfte (§4.1) braucht nur Regeldaten und ist da. Die
+    empirische (§4.2) und die Meta-Zahlen (§3) brauchen Turnierlisten und
+    fehlen. §4 verlangt genau diese Trennung: zusammengerührt ließe sich
+    nicht mehr sagen, *warum* etwas empfohlen wurde.
+    """
     data = client.get("/api/datasheets/DS001/context").json()
-    assert data["available"] is False
-    assert "Phase" in data["reason"]
+
+    assert data["rules_based"]["available"] is True
+    assert data["rules_based"]["synergies"]
+    assert data["empirical"]["available"] is False
+    assert "Phasen 1–3" in data["empirical"]["reason"]
+
+
+def test_synergien_tragen_ihre_herkunft(client):
+    """Belegtes und Abgeleitetes dürfen nicht gleich aussehen."""
+    data = client.get("/api/datasheets/DS001/synergies").json()
+
+    assert data["available"] is True
+    anschluss = [s for s in data["synergies"] if s["kind"] == "leader_attach"]
+    assert anschluss, "Der Anschluss aus Datasheets_leader fehlt"
+    assert anschluss[0]["basis"] == "DATA"
+    assert anschluss[0]["explanation"]
+    assert "§4.2" in data["missing"]["empirisch"]
+
+
+def test_synergien_unbekanntes_datasheet(client):
+    assert client.get("/api/datasheets/gibtsnicht/synergies").status_code == 404
 
 
 def test_generate_baut_eine_liste(client):

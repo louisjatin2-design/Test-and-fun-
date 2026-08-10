@@ -371,10 +371,10 @@ def unit_vector(card: dict, model_count: int) -> RoleVector:
         values[key] = pro_modell * models
 
     profile = (card.get("profiles") or [{}])[0]
-    toughness = _int(profile.get("T"), 4)
-    save = _int(profile.get("Sv"), 7)
-    invulnerable = _int(profile.get("inv_sv"), 0) or None
-    wounds = _int(profile.get("W"), 1)
+    toughness = stat_int(profile.get("T"), 4)
+    save = stat_int(profile.get("Sv"), 7)
+    invulnerable = stat_int(profile.get("inv_sv"), 0) or None
+    wounds = stat_int(profile.get("W"), 1)
 
     p_wound = wound_chance(REFERENCE_ATTACK_STRENGTH, toughness)
     p_fail = save_fail_chance(save, invulnerable, REFERENCE_ATTACK_AP)
@@ -386,8 +386,8 @@ def unit_vector(card: dict, model_count: int) -> RoleVector:
         anti_elite=values["anti_elite"],
         anti_horde=values["anti_horde"],
         durability=durability,
-        control=models * _int(profile.get("OC"), 0),
-        reach=max((_int(w.get("range"), 0) for w in ranged), default=0.0),
+        control=models * stat_int(profile.get("OC"), 0),
+        reach=max((stat_int(w.get("range"), 0) for w in ranged), default=0.0),
     )
 
 
@@ -439,6 +439,8 @@ def _mean(values: Iterable[float]) -> float:
     return sum(items) / len(items) if items else 0.0
 
 
-def _int(value, default: int = 0) -> int:
+def stat_int(value, default: int = 0) -> int:
+    """Zahl aus einem Profilwert: ``3+`` wird 3, ``6"`` wird 6, ``-`` wird
+    zum Vorgabewert. Auch :mod:`app.rules.synergy` liest damit Profile."""
     digits = re.sub(r"[^0-9]", "", str(value or ""))
     return int(digits) if digits else default

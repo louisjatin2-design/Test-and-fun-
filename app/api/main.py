@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app import config, db, derive, live, models
-from app.rules import generator, ruleset
+from app.rules import generator, ruleset, synergy
 from app.rules.builderlist import ActionError, BuilderList, apply_all
 from app.rules.validator import RulesContext, validate
 
@@ -412,24 +412,110 @@ def generate_list(request: GenerateRequest) -> dict:
     return result.to_dict()
 
 
+#: So viele Partner je Synergieart gehen ans UI. Ein Trupp, den 29
+#: Charaktere anführen dürfen, hat 29 belegte Synergien — als Liste im Panel
+#: ist das keine Hilfe mehr, sondern eine Wand.
+SYNERGY_LIMIT = 8
+
+_synergy_cache: dict[tuple[str, int], synergy.SynergyIndex] = {}
+
+
+def _synergy_index(session, faction_id: str, version: str) -> synergy.SynergyIndex:
+    """Effekt-Graph je Fraktion, einmal gebaut und gehalten.
+
+    Derselbe Schlüssel wie beim Regelkontext: Ohne den Datenstand würde ein
+    Update zur Laufzeit nie ankommen.
+    """
+    from app.etl.updates import sync_from_db
+
+    key = (faction_id, sync_from_db(session))
+    if key not in _synergy_cache:
+        _synergy_cache.clear()
+        rows = session.scalars(
+            select(models.DatasheetCard).where(
+                models.DatasheetCard.ruleset_version == version,
+                models.DatasheetCard.faction_id == faction_id,
+            )
+        )
+        cards = []
+        for row in rows:
+            payload = json.loads(row.payload)
+            payload.update(
+                id=row.datasheet_id, name=row.name, faction_id=row.faction_id,
+                transport_capacity=row.transport_capacity,
+            )
+            cards.append(payload)
+        _synergy_cache[key] = synergy.SynergyIndex.build(cards)
+    return _synergy_cache[key]
+
+
+def _synergy_payload(session, datasheet_id: str, version: str) -> dict:
+    card = session.get(models.DatasheetCard, (datasheet_id, version))
+    if card is None:
+        raise HTTPException(status_code=404, detail="Unbekanntes Datasheet")
+
+    index = _synergy_index(session, card.faction_id, version)
+    alle = synergy.synergies_for(datasheet_id, index)
+
+    # Je Art nur die ersten paar, aber die Gesamtzahl ehrlich dazu.
+    gezeigt: dict[str, list[dict]] = {}
+    gesamt: dict[str, int] = {}
+    for eintrag in alle:
+        gesamt[eintrag.kind] = gesamt.get(eintrag.kind, 0) + 1
+        gruppe = gezeigt.setdefault(eintrag.kind, [])
+        if len(gruppe) < SYNERGY_LIMIT:
+            gruppe.append(eintrag.to_dict())
+
+    einheit = index.units.get(datasheet_id)
+    return {
+        "datasheet_id": datasheet_id,
+        "available": bool(alle),
+        "synergies": [s for gruppe in gezeigt.values() for s in gruppe],
+        "counts": gesamt,
+        "provides": [e.to_dict() for e in einheit.provides] if einheit else [],
+        "requires": [n.to_dict() for n in einheit.requires] if einheit else [],
+        **synergy.as_dict(),
+    }
+
+
+@app.get("/api/datasheets/{datasheet_id}/synergies")
+def datasheet_synergies(
+    datasheet_id: str, ruleset: str = Query(default=config.RULESET_VERSION)
+) -> dict:
+    """Regelbasierte Synergien — PLAN.md §4.1, §8.
+
+    Angebot und Nachfrage je Einheit, gematcht innerhalb der Fraktion. Die
+    empirische Hälfte (§4.2) fehlt weiterhin und steht als solche in der
+    Antwort.
+    """
+    with db.session() as session:
+        return _synergy_payload(session, datasheet_id, ruleset)
+
+
 @app.get("/api/datasheets/{datasheet_id}/context")
 def datasheet_context(datasheet_id: str) -> dict:
     """Abschnitt 11 des Panels — Meta und Synergie zum Listenkontext.
 
-    Noch ohne Inhalt: Er braucht die Turnierdaten aus den Phasen 1–3 und die
-    Synergie-Engine aus Phase 5. Der Endpunkt existiert, damit das Panel den
-    Abschnitt schon jetzt asynchron nachlädt und beim Ausbau nichts am
-    Frontend zu ändern ist.
+    Die **regelbasierte** Hälfte aus §4.1 steht jetzt darin: Sie braucht nur
+    Regeldaten. Die **empirische** aus §4.2 und die Meta-Zahlen aus §3
+    brauchen Turnierlisten und fehlen weiterhin — getrennt ausgewiesen, weil
+    §4 genau diese Trennung verlangt: Sonst lässt sich nie sagen, *warum*
+    etwas empfohlen wurde.
     """
+    with db.session() as session:
+        rules_based = _synergy_payload(session, datasheet_id, config.RULESET_VERSION)
+
     return {
         "datasheet_id": datasheet_id,
-        "available": False,
-        "reason": (
-            "Meta- und Synergiedaten brauchen die Turnierauswertung "
-            "(Phasen 1–3) und die Synergie-Engine (Phase 5)."
-        ),
-        "inclusion_rate": None,
-        "synergies": [],
+        "rules_based": rules_based,
+        "empirical": {
+            "available": False,
+            "reason": (
+                "Meta-Zahlen (§3) und empirische Synergie (§4.2) brauchen "
+                "die Turnierauswertung aus den Phasen 1–3."
+            ),
+            "inclusion_rate": None,
+        },
     }
 
 

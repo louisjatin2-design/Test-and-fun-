@@ -8,7 +8,7 @@ Der Umsetzungsplan — Datenquellen, Datenmodell, Ranking-Methodik, Synergie-Erk
 
 ## Status
 
-**Phase 0, 4, 4b und der regelbasierte Teil von 6 sind gebaut** — alles, was ohne Turnierdaten auskommt:
+**Gebaut ist alles, was ohne Turnierdaten auskommt** — Phase 0, 4, 4b, die deduktive Hälfte von 5 und der regelbasierte Teil von 6:
 
 | | Was läuft |
 |---|---|
@@ -20,8 +20,36 @@ Der Umsetzungsplan — Datenquellen, Datenmodell, Ranking-Methodik, Synergie-Erk
 | **Offline-Datei** | `build_offline.py` erzeugt eine eigenständige HTML-Datei mit Daten und Regel-Engine — läuft ohne Server auf jedem Telefon |
 | **Auf jedem Gerät** | Eine Oberfläche für PC, iPad, iPhone und Android: drei Spalten, zwei Spalten oder Reiter — je nach Platz. Installierbar als App |
 | **Listen-Generator** | Baut eine Liste aus Fraktion + Punktelimit oder füllt die Restpunkte einer bestehenden auf — legal, ausgewogen, mit Begründung je Einheit |
+| **Synergie (regelbasiert)** | Angebot und Nachfrage je Einheit aus den Regeldaten: Anschluss, Transport-Zustellung, Aura-Unterstützung — jeder Treffer mit Grund und Herkunft |
 
-Noch offen: Turnierdaten-Ingestion (Phase 1–3) und die Synergie-Engine (Phase 5). Der Meta-Abschnitt im Inspektor ist dafür vorbereitet und meldet bis dahin ehrlich „noch keine Daten".
+**Was noch fehlt, fehlt aus einem Grund.** Alles Verbleibende hängt an Turnierdaten, und dafür gibt es keine Quelle: [`PLAN.md` §1.4](PLAN.md) macht die ToS-Prüfung zur Vorbedingung jedes Scrapers, und ohne importierte Ergebnisse gibt es nichts auszuwerten.
+
+| Offen | Braucht |
+|---|---|
+| Fraktions-Ranking mit CI und Skill-Bereinigung (§3) | Einzelspiele aus Turnieren |
+| Empirische Synergie: Lift, Interaktionskoeffizient (§4.2) | Turnierlisten |
+| Archetyp-Seeding für den Generator (§5.4, Phase 8) | erfolgreiche Listen zum Clustern |
+| Einheiten-Statistik und Inklusionsraten (§3) | Listen mit Platzierungen |
+
+Der Meta-Abschnitt im Inspektor zeigt deshalb die regelbasierte Hälfte und sagt bei der anderen ehrlich „noch keine Daten" — statt beides zu vermischen.
+
+## Synergie: was aus den Regeln folgt
+
+[`PLAN.md` §4](PLAN.md) trennt zwei Signalfamilien und führt sie erst am Ende zusammen — „sonst kann man nie sagen, *warum* etwas empfohlen wurde". Die **deduktive** Hälfte (§4.1) braucht keine Turnierdaten und ist gebaut.
+
+Das Verfahren ist Angebot und Nachfrage: Jede Einheit bekommt eine Liste dessen, was sie *anbietet*, und eine dessen, was ihr *fehlt*. Eine Synergie ist ein Treffer zwischen beidem — kein Ähnlichkeitsmaß, sondern ein benennbarer Grund.
+
+| Bedarf | Gedeckt durch | Herkunft |
+|---|---|---|
+| Anschluss | `Datasheets_leader` | **belegt** |
+| Nahkampf-Zustellung (langsam, Schaden im Nahkampf) | Transportkapazität mit passendem Keyword und genug Plätzen | **belegt** |
+| Trefferhilfe (viele Attacken, mäßiger Trefferwert) | Aura mit Wiederholungswurf oder +1 | abgeleitet |
+| Verwundungshilfe (sehr hohes Attackenvolumen) | Aura mit +1 auf Verwundung oder Lethal Hits | abgeleitet |
+| Schadensabwehr (teuer, schlecht gerüstet, ohne Retter) | Aura mit Rettungswurf oder Feel No Pain | abgeleitet |
+
+**Die enge Auslegung ist Absicht.** Der erste Entwurf zählte jede Fähigkeit mit „Wiederholungswurf" als Angebot — auch die, die nur die eigene Einheit betrifft. Für einen einzigen Trupp kamen dabei 960 „Synergien" heraus, und keine davon war eine Auskunft. Gezählt wird jetzt nur, was eine Reichweite hat: Eine Aura wirkt über die eigene Einheit hinaus, alles andere nicht. Das übersieht anders formulierte Fähigkeiten — eine fehlende Synergie ist aber ungleich weniger schädlich als tausend erfundene.
+
+Partner, die schon in der Liste stehen, stehen oben. Die Zählung ist ehrlich: „8 von 23" heißt, dass es 23 gibt und 8 gezeigt werden.
 
 ## Der Listen-Generator
 
@@ -194,7 +222,7 @@ Ein `python -m app.etl.wahapedia` von Hand wird ebenfalls bemerkt: Maßgeblich i
 pytest
 ```
 
-255 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
+267 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
 
 ## Aufbau
 
@@ -211,6 +239,7 @@ app/
   rules/validator.py   Constraint-Validator
   rules/roleprofile.py Rollenprofil je Einheit aus Waffen- und Profilwerten
   rules/generator.py   Listen-Generator: Assistent und Vollautomatik
+  rules/synergy.py     Regelbasierte Synergie: Angebot trifft Nachfrage
   live.py              Datenstand-Zähler für Live-Updates
   etl/updates.py       Update-Erkennung und -Übernahme
   api/main.py          FastAPI inkl. SSE-Stream

@@ -140,10 +140,26 @@ function offlineBackend() {
       const next = WHRules.applyAll(start, patch);
       return { list: next, validation: check(next) };
     },
-    unitContext: async (id) => ({
-      datasheet_id: id, available: false, synergies: [],
-      reason: data.meta.context_reason,
-    }),
+    // Die regelbasierte Synergie (§4.1) ist vorgerechnet und liegt als
+    // Daten in der Datei — sie hängt nur an den Regeln, nicht am Server.
+    unitContext: async (id) => {
+      const faction = state.list.faction_id;
+      const treffer = (data.synergies?.[faction] ?? {})[id] ?? [];
+      const counts = {};
+      for (const eintrag of treffer) {
+        counts[eintrag.kind] = (counts[eintrag.kind] ?? 0) + 1;
+      }
+      return {
+        datasheet_id: id,
+        rules_based: {
+          available: treffer.length > 0,
+          synergies: treffer,
+          counts,
+          ...(data.synergy_meta ?? {}),
+        },
+        empirical: { available: false, reason: data.meta.context_reason },
+      };
+    },
     // Der Generator läuft hier genauso wie Reducer und Validator: als
     // Zwilling in rules.js. Die Doppelung ist tragbar, weil
     // tests/test_parity.py beide Seiten dieselben Listen bauen lässt und
@@ -986,20 +1002,92 @@ function sectionComposition(item) {
  */
 function sectionMeta() {
   return section("Meta & Synergie",
-    '<p class="note" id="insp-meta">wird geladen …</p>', "sec meta");
+    '<div id="insp-meta"><p class="note">wird geladen …</p></div>', "sec meta");
 }
 
+/**
+ * Abschnitt 11 — die beiden Signalfamilien aus §4 getrennt.
+ *
+ * Die regelbasierte Hälfte (§4.1) steht in den Regeldaten und ist da; die
+ * empirische (§4.2) braucht Turnierlisten und fehlt. Sie zusammenzurühren
+ * wäre bequemer und genau der Fehler, vor dem der Plan warnt: Danach lässt
+ * sich nicht mehr sagen, *warum* etwas empfohlen wurde.
+ */
 async function loadContext(datasheetId) {
   try {
     const context = await backend.unitContext(datasheetId);
     const target = $("insp-meta");
     if (!target || state.inspected !== datasheetId) return;
-    target.textContent = context.available
-      ? JSON.stringify(context)
-      : `Noch keine Daten — ${context.reason}`;
+
+    target.innerHTML = "";
+    target.append(renderSynergies(context.rules_based ?? {}));
+
+    const empirisch = context.empirical ?? {};
+    const note = document.createElement("p");
+    note.className = "note";
+    note.textContent = empirisch.available
+      ? JSON.stringify(empirisch)
+      : `Meta-Zahlen: noch keine Daten — ${empirisch.reason ?? ""}`;
+    target.append(note);
   } catch {
     /* Das Panel wartet nie auf diesen Abschnitt (§6.4). */
   }
+}
+
+function renderSynergies(daten) {
+  const box = document.createElement("div");
+  const synergien = daten.synergies ?? [];
+  if (!synergien.length) {
+    box.innerHTML = '<p class="empty-note">Keine regelbasierte Synergie gefunden.</p>';
+    return box;
+  }
+
+  // Partner, die schon in der Liste stehen, zuerst — das ist die Auskunft,
+  // die beim Bauen tatsächlich weiterhilft.
+  const inList = new Set(state.list.entries.map((entry) => entry.datasheet_id));
+  const gruppen = new Map();
+  for (const eintrag of synergien) {
+    if (!gruppen.has(eintrag.title)) gruppen.set(eintrag.title, []);
+    gruppen.get(eintrag.title).push(eintrag);
+  }
+
+  for (const [titel, eintraege] of gruppen) {
+    eintraege.sort((a, b) =>
+      Number(inList.has(b.partner_id)) - Number(inList.has(a.partner_id)));
+
+    const kopf = document.createElement("p");
+    kopf.className = "muted";
+    kopf.style.margin = "8px 0 2px";
+    const gesamt = daten.counts?.[eintraege[0].kind] ?? eintraege.length;
+    kopf.innerHTML =
+      `${escapeHtml(titel)} ` +
+      `<span class="basis ${eintraege[0].basis}" title="${escapeHtml(eintraege[0].note)}">` +
+      `${eintraege[0].basis === "DATA" ? "belegt" : "abgeleitet"}</span>` +
+      (gesamt > eintraege.length
+        ? ` <span class="muted">(${eintraege.length} von ${gesamt})</span>` : "");
+    box.append(kopf);
+
+    for (const eintrag of eintraege) {
+      const row = document.createElement("div");
+      row.className = "link-row";
+      row.innerHTML =
+        `<button data-open="${escapeHtml(eintrag.partner_id)}">` +
+        `${escapeHtml(eintrag.partner_name)}</button>` +
+        (inList.has(eintrag.partner_id)
+          ? '<span class="in-list">in der Liste</span>' : "");
+      const why = document.createElement("div");
+      why.className = "syn-why";
+      why.textContent = eintrag.explanation;
+      const wrap = document.createElement("div");
+      wrap.append(row, why);
+      box.append(wrap);
+    }
+  }
+
+  for (const button of box.querySelectorAll("[data-open]")) {
+    button.addEventListener("click", () => openInspector(button.dataset.open));
+  }
+  return box;
 }
 
 function footer(item) {

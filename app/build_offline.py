@@ -26,9 +26,12 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app import config, db, derive, models
-from app.rules import generator, ruleset
+from app.rules import generator, ruleset, synergy
 
 STATIC = Path(__file__).resolve().parent / "static"
+
+#: So viele Partner je Synergieart wandern in die Offline-Datei.
+OFFLINE_SYNERGY_LIMIT = 6
 
 CONTEXT_REASON = (
     "Meta- und Synergiedaten brauchen die Turnierauswertung (Phasen 1–3) "
@@ -127,6 +130,27 @@ def collect(session, faction_ids: list[str] | None, text_mode: str) -> dict:
             key=lambda d: d["name"],
         )
 
+    # Regelbasierte Synergie (§4.1) wird hier *ausgerechnet* und als Daten
+    # mitgegeben, statt die Ableitung ein zweites Mal in JavaScript zu
+    # schreiben. Sie hängt nur an den Regeldaten, ändert sich also zwischen
+    # zwei Builds nicht — genau der Fall, in dem Vorrechnen besser ist als
+    # Doppeln. Je Art gedeckelt, sonst wächst die Datei um ein Vielfaches.
+    synergies: dict[str, dict[str, list[dict]]] = {}
+    for faction_id in present:
+        index = synergy.SynergyIndex.build(cards_by_faction[faction_id])
+        je_einheit: dict[str, list[dict]] = {}
+        for datasheet_id in index.units:
+            gezeigt: dict[str, int] = {}
+            treffer = []
+            for eintrag in synergy.synergies_for(datasheet_id, index):
+                zahl = gezeigt.get(eintrag.kind, 0)
+                if zahl < OFFLINE_SYNERGY_LIMIT:
+                    treffer.append(eintrag.to_dict())
+                gezeigt[eintrag.kind] = zahl + 1
+            if treffer:
+                je_einheit[datasheet_id] = treffer
+        synergies[faction_id] = je_einheit
+
     meta_rows = {row.key: row.value for row in session.scalars(select(models.Meta))}
 
     return {
@@ -141,6 +165,7 @@ def collect(session, faction_ids: list[str] | None, text_mode: str) -> dict:
             "has_data": bool(present),
             "offline": True,
             "context_reason": CONTEXT_REASON,
+            "synergy_limit": OFFLINE_SYNERGY_LIMIT,
             "attribution": {
                 "text": config.ATTRIBUTION.text,
                 "url": config.ATTRIBUTION.url,
@@ -165,6 +190,8 @@ def collect(session, faction_ids: list[str] | None, text_mode: str) -> dict:
         "enhancements": enhancements,
         "stratagems": stratagems,
         "stratagems_by_detachment": by_detachment,
+        "synergies": synergies,
+        "synergy_meta": synergy.as_dict(),
     }
 
 
