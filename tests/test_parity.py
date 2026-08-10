@@ -84,6 +84,12 @@ def run_browser(session, liste: dict, patch: list[dict]) -> dict:
         input=json.dumps(payload),
         capture_output=True,
         text=True,
+        # Node schreibt UTF-8. Ohne diese Angabe nimmt Python die
+        # Locale-Codepage — auf einem deutschen Windows cp1252. Aus dem
+        # Gedankenstrich in jedem Meldungstext wird dabei ein Ersatzzeichen,
+        # und der Vergleich meldet einen Unterschied zwischen den Engines,
+        # den es gar nicht gibt.
+        encoding="utf-8",
         timeout=60,
     )
     assert result.returncode == 0, result.stderr
@@ -317,7 +323,7 @@ def test_konstanten_kommen_aus_einer_quelle():
     assert daten["max_enhancements"] == ruleset.MAX_ENHANCEMENTS
     assert set(daten["specs"]) == set(ruleset.SPECS)
 
-    quelle = (Path(__file__).parent.parent / "app" / "static" / "rules.js").read_text()
+    quelle = (Path(__file__).parent.parent / "app" / "static" / "rules.js").read_text(encoding="utf-8")
     for zahl in ("max_same_datasheet", "max_enhancements", "max_leaders_per_unit"):
         assert f"ruleset.{zahl}" in quelle, f"{zahl} wird nicht aus ruleset gelesen"
 
@@ -371,6 +377,7 @@ def run_browser_generator(session, liste: dict, keep_existing: bool) -> dict:
         input=json.dumps(payload),
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=120,
     )
     assert result.returncode == 0, result.stderr
@@ -438,7 +445,7 @@ def test_generator_fuellt_beidseitig_gleich_auf(session):
     assert struktur(python) == struktur(browser)
 
 
-def test_generator_rechnet_beidseitig_dasselbe_rollenprofil(session):
+def test_generator_rechnet_beidseitig_dasselbe_rollenprofil(session, tmp_path):
     """Die Schadensrechnung selbst, Karte für Karte.
 
     Läuft sie auseinander, weichen die Listen erst weiter oben ab — und die
@@ -468,10 +475,21 @@ def test_generator_rechnet_beidseitig_dasselbe_rollenprofil(session):
         "}"
         "process.stdout.write(JSON.stringify(out));"
     )
-    quelle = (Path(__file__).parent.parent / "app" / "static" / "rules.js").read_text()
+    quelle = (Path(__file__).parent.parent / "app" / "static" / "rules.js").read_text(encoding="utf-8")
+    # Über eine Datei statt über `node -e`: Windows deckelt die Kommandozeile
+    # bei 32 KiB, und rules.js ist längst darüber — der Aufruf scheiterte dort
+    # mit "Der Dateiname oder die Erweiterung ist zu lang", also an einer
+    # Grenze des Betriebssystems und nicht an einer Abweichung der Engines.
+    # `.cjs`, nicht `.mjs`: Das Skript oben benutzt `require`.
+    laeufer = tmp_path / "roleprofile.cjs"
+    laeufer.write_text(
+        f"new Function({json.dumps(quelle)}).call(globalThis);{skript}",
+        encoding="utf-8",
+    )
     result = subprocess.run(
-        ["node", "-e", f"new Function({json.dumps(quelle)}).call(globalThis);{skript}"],
-        input=json.dumps(payload), capture_output=True, text=True, timeout=60,
+        ["node", str(laeufer)],
+        input=json.dumps(payload), capture_output=True, text=True,
+        encoding="utf-8", timeout=60,
     )
     assert result.returncode == 0, result.stderr
     browser = json.loads(result.stdout)
@@ -497,7 +515,7 @@ def test_generator_konstanten_kommen_aus_einer_quelle():
     assert daten["weights"] == generator.WEIGHTS
     assert daten["roles"]["targets"]["anti_tank"]["toughness"] == 10
 
-    quelle = (Path(__file__).parent.parent / "app" / "static" / "rules.js").read_text()
+    quelle = (Path(__file__).parent.parent / "app" / "static" / "rules.js").read_text(encoding="utf-8")
     for feld in ("spend_weight", "overshoot_credit", "leader_bonus",
                  "duplicate_penalty", "lone_character_penalty",
                  "max_character_share", "validate_top_k"):

@@ -179,7 +179,7 @@ def test_offline_datei_laedt_nichts_nach():
 
     assert "/static/" not in html
     assert "<script src=" not in html
-    assert "window.WH_OFFLINE" in html
+    assert '<script type="application/json" id="wh-data">' in html
 
 
 def test_offline_datei_nimmt_das_stylesheet_mit():
@@ -195,3 +195,99 @@ def test_offline_datei_nimmt_das_stylesheet_mit():
     assert "100dvh" in html
     assert "@media (hover: none)" in html
     assert "@media (pointer: coarse)" in html
+
+
+def test_daten_stehen_nicht_im_selben_script_wie_der_code():
+    """Der Fehler, der die Datei auf iPad und iPhone unbrauchbar machte.
+
+    Daten und Programm lagen in *einem* `<script>`: erst ein Objektliteral
+    mit allen Regeldaten, dann rules.js und app.js. Bei allen Fraktionen sind
+    das rund 13 MB, die der JavaScript-Parser vollständig verarbeiten muss,
+    bevor die erste Zeile Code läuft. Reicht der Speicher dafür nicht, fällt
+    das ganze Element aus — und übrig bleibt eine Seite, die aussieht wie die
+    App und in der die Fraktionsauswahl leer ist, weil app.js sie füllt.
+
+    Getrennt kann das nicht mehr passieren: Für den JavaScript-Parser sind
+    die Daten gar nicht da, und ein Fehler beim Einlesen ist ein normaler
+    Laufzeitfehler, den der Startbildschirm anzeigt.
+    """
+    from app.build_offline import render
+
+    marke = "ZZ-Erkennungsmarke-4711"
+    html = render({"meta": {"attribution": marke}, "cards": {}, "factions": []})
+
+    daten = html.index('<script type="application/json" id="wh-data">')
+    datenende = html.index("</script>", daten)
+    code = html.index("<script>\n")
+    assert daten < datenende < code, "Die Daten müssen vor dem Programm stehen"
+
+    # Zwischen Datenende und Programmanfang darf nichts liegen.
+    assert html[datenende:code + len("<script>\n")].strip() == "</script>\n<script>"
+
+    # Und die Nutzdaten stehen genau einmal, nämlich im Datenelement.
+    assert html.count(marke) == 1
+    assert daten < html.index(marke) < datenende
+
+
+def test_offline_daten_koennen_das_script_element_nicht_beenden():
+    """Regeltexte sind fremde Daten und enthalten HTML.
+
+    `</script>` mitten in einer Fähigkeit würde das Datenelement beenden; der
+    Rest der Datei landete dann als Text im Dokument. `<!--` bringt den
+    Tokenizer in einen Zustand, in dem ein späteres `<script` dasselbe von
+    der anderen Seite anrichtet. Beides sind gültige JSON-Escapes — nach dem
+    Einlesen steht wieder der Originaltext da.
+    """
+    import json
+
+    from app.build_offline import _payload
+
+    boesartig = {"a": "Ende: </script><script>alert(1)</script>",
+                 "b": "Kommentar: <!-- und <script>"}
+    text = _payload(boesartig)
+
+    assert "</script" not in text
+    assert "<!--" not in text
+    assert json.loads(text) == boesartig
+
+
+def test_startbildschirm_erklaert_den_fehlstart():
+    """Ohne ihn scheitert die App auf einem fremden Gerät stumm.
+
+    Genau das war die Meldung vom iPad: „keine Fraktion auswählbar". Die
+    Auswahlfelder füllt JavaScript — läuft es nicht, bleiben sie leer, und
+    nichts auf dem Bildschirm sagt warum.
+    """
+    assert "<noscript>" in INDEX, "Ohne <noscript> bleibt JavaScript-aus stumm"
+    assert 'id="boot"' in INDEX
+
+    # Der Hinweis muss den iOS-Fall benennen — er ist der wahrscheinlichste.
+    noscript = INDEX[INDEX.index("<noscript>"):INDEX.index("</noscript>")]
+    assert "iPad" in noscript
+
+    # Erst nach einer Frist sichtbar: Beim normalen Start entfernt app.js ihn
+    # vorher, und niemand sieht ihn aufblitzen.
+    assert re.search(r"\.boot\s*\{[^}]*animation:\s*boot-appear[^}]*\}", CSS)
+    assert re.search(r"\.boot\s*\{[^}]*visibility:\s*hidden", CSS), (
+        "Unsichtbar allein reicht nicht — die Fläche finge sonst jeden Tipp ab")
+
+    app_js = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert 'bootDone' in app_js and 'init().catch(bootFailed)' in app_js
+
+
+def test_helles_thema_mit_dunkler_variante():
+    """Weiß ist die Vorgabe, nicht die Ausnahme.
+
+    Wer das Farbschema umbaut, soll die Zeile hier vor sich haben: `dark`
+    allein im `color-scheme` und ein Browser färbt Auswahlfelder,
+    Bildlaufleisten und die Fläche hinter der Seite dunkel — auch wenn im
+    Stylesheet nichts Dunkles mehr steht.
+    """
+    assert re.search(r":root\s*\{[^}]*color-scheme:\s*light", CSS)
+    assert "@media (prefers-color-scheme: dark)" in CSS
+    assert 'content="light dark"' in INDEX
+
+    # Die Holzmaserung ist ein Verlauf, kein Bild: Die Offline-Datei darf
+    # nichts nachladen, und fremde Bildrechte gibt es so gar nicht erst.
+    assert re.search(r"--wood:\s*linear-gradient", CSS)
+    assert "url(http" not in CSS and "url('http" not in CSS and 'url("http' not in CSS

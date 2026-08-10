@@ -121,7 +121,21 @@ python -m app.build_offline                       # alle Fraktionen
 python -m app.build_offline --faction SM --out dist/marines.html
 ```
 
-eine **einzelne HTML-Datei** mit Oberfläche, Regel-Engine und allen Daten darin (alle Fraktionen: rund 13 MB). Auf das Gerät kopieren, antippen, fertig: Sie läuft vollständig offline, auch im Flugmodus, und macht keinen einzigen Netzwerkzugriff.
+eine **einzelne HTML-Datei** mit Oberfläche, Regel-Engine und allen Daten darin (alle Fraktionen: rund 12 MB). Auf das Gerät kopieren, in einem Browser öffnen, fertig: Sie läuft vollständig offline, auch im Flugmodus, und macht keinen einzigen Netzwerkzugriff.
+
+#### Auf iPad und iPhone: in einem Browser öffnen, nicht in der Vorschau
+
+Tippt man die Datei in **Dateien** nur an, zeigt iOS eine Vorschau — und die führt **kein JavaScript** aus. Die Seite erscheint dann zwar, aber alle Auswahlfelder bleiben leer: Fraktion, Detachment und Katalog füllt das Programm, und das lief nie. Stattdessen die Datei antippen, oben auf **Teilen** und einen Browser wählen.
+
+Sagt die Datei beim Öffnen **„Wird geladen …"** und bleibt dabei stehen, hat sie es nicht bis zum Start geschafft. Zwei Ursachen kommen in Frage, und beide stehen auf dem Bildschirm: kein JavaScript (siehe oben) oder zu wenig Speicher. Gegen den Speicher hilft ein kleinerer Build — wer zwei Fraktionen spielt, braucht die anderen achtzehn nicht dabeizuhaben:
+
+```bash
+python -m app.build_offline --faction SM --faction TAU --out dist/meine.html
+```
+
+Der Build weist ab acht MB von sich aus darauf hin.
+
+**Was dabei früher schiefging.** Daten und Programm lagen in *einem* `<script>`: erst rund 13 MB Objektliteral, dann Regel-Engine und Oberfläche. Ein Objektliteral muss der JavaScript-Parser vollständig durchgearbeitet haben, bevor die erste Zeile Code läuft — scheitert er daran, fällt das ganze Element aus, Oberfläche inklusive. Übrig blieb eine Seite, die aussah wie die App und in der sich keine Fraktion auswählen ließ. Die Daten stehen jetzt in einem eigenen `<script type="application/json">`, sind für den JavaScript-Parser also gar nicht vorhanden, und `JSON.parse` liest sie in einem Zug. Und geht doch etwas schief, ist es ein gewöhnlicher Laufzeitfehler, den der Startbildschirm im Klartext anzeigt, statt dass die Seite stumm danebensteht.
 
 Reducer, Validator **und Generator** kommen dabei aus `app/static/rules.js` statt aus Python. Diese Doppelung ist der Preis dafür, dass ohne Server überhaupt validiert und gebaut werden kann — `tests/test_parity.py` treibt dieselben zufälligen Aktionsfolgen durch beide Engines und vergleicht Punkte, Legalität und jeden Meldungstext; für den Generator vergleicht er die gebauten Listen Eintrag für Eintrag.
 
@@ -172,6 +186,12 @@ WH_RULES_TEXT_MODE=derived WH_BIND_HOST=0.0.0.0 uvicorn app.api.main:app --host 
 
 oder gar nicht freigeben. Ins offene Internet gehört die Instanz in keinem Fall.
 
+### Aussehen
+
+Hell, ruhig, wenig Linien — Papier statt Cockpit. Die einzige Farbe, die sich meldet, ist ein warmes Nussbraun; es markiert genau drei Dinge: was aktiv ist, was eine Überschrift ist und wo das Budget steht. Alles andere ist Grau in Grau, damit die Regeltexte lesbar bleiben — sie sind der Inhalt, die Oberfläche ist es nicht.
+
+Die Holzmaserung unter der Kopfzeile, in der Wortmarke und unter dem aktiven Reiter ist ein **CSS-Verlauf, kein Bild**. Das hat zwei Gründe, und Geschmack ist keiner davon: Die Offline-Datei darf nichts nachladen — ein Bild von einer fremden Adresse wäre auf einem Gerät ohne Netz ein leerer Kasten —, und ein Verlauf gehört niemandem. Die App kommt damit ohne eine einzige Bilddatei und ohne einen einzigen externen Verweis aus. Wer abends aufmacht, bekommt dasselbe Design in warmem Dunkelbraun; maßgeblich ist die Systemeinstellung.
+
 ### Eine Oberfläche für alle Geräte
 
 Die App passt sich an zwei Größen an, nicht an eine: an die **Breite** das Layout, an das **Eingabegerät** die Bedienelemente. Das fällt nicht zusammen — ein iPad im Querformat ist 1194 px breit und wird trotzdem mit dem Finger bedient, ein schmal gezogenes Fenster auf dem PC nicht. Wer beides an der Breite festmacht, bekommt auf dem einen Gerät Mausbedienung ohne Maus und auf dem anderen Fingergrößen ohne Finger.
@@ -179,7 +199,7 @@ Die App passt sich an zwei Größen an, nicht an eine: an die **Breite** das Lay
 | Breite | Layout | Typisch |
 |---|---|---|
 | über 1024 px | Katalog · Liste · Inspektor nebeneinander | PC, iPad quer |
-| 621–1024 px | Katalog · Liste, Inspektor als Sheet von rechts | iPad hoch, halbes Fenster |
+| 621–1024 px | Katalog · Liste, Inspektor als Sheet von rechts; die drei Auswahlfelder bekommen eine eigene, volle Zeile | iPad hoch, halbes Fenster |
 | bis 620 px | Reiter zwischen Katalog und Liste, Inspektor als Bottom Sheet | iPhone, Android |
 | flach (Höhe ≤ 520 px) | kompakte Kopfzeile, Inspektor von rechts | Telefon quer |
 
@@ -222,7 +242,9 @@ Ein `python -m app.etl.wahapedia` von Hand wird ebenfalls bemerkt: Maßgeblich i
 pytest
 ```
 
-267 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
+271 Tests, darunter die Abnahmekriterien aus [`PLAN.md` §6.7](PLAN.md): Contract-Test über jede Karte, Property-Test „was das UI anbietet, darf der Validator nie ablehnen", Budget-Messung und Export-Roundtrip.
+
+Der Parity-Test braucht `node` im PATH; fehlt es, überspringt er sich. Unter **Windows** kam er lange nur scheinbar durch: Python las die Ausgabe von Node mit der Locale-Codepage statt als UTF-8, und aus dem Gedankenstrich in jedem Meldungstext wurde ein Ersatzzeichen — 21 gemeldete Unterschiede zwischen zwei Engines, die in Wirklichkeit dasselbe sagten.
 
 ## Aufbau
 

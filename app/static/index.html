@@ -8,15 +8,16 @@
      Bildschirmtastatur aufgeht — sonst liegt die untere Hälfte der App
      dahinter, während man ins Suchfeld tippt. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light dark">
 <!-- "Zum Home-Bildschirm" auf iOS/Android: startet ohne Browserleiste. -->
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="40k Builder">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#1c1f26">
+<meta name="theme-color" content="#faf8f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1714" media="(prefers-color-scheme: dark)">
 <title>warhammer-meta · Listenbuilder</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⚔</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='4' fill='%23a9724a'/><rect x='3' y='4' width='10' height='1.6' rx='.8' fill='%23fff' opacity='.9'/><rect x='3' y='7.2' width='10' height='1.6' rx='.8' fill='%23fff' opacity='.65'/><rect x='3' y='10.4' width='6' height='1.6' rx='.8' fill='%23fff' opacity='.45'/></svg>">
 <!-- iOS nimmt für den Home-Bildschirm kein SVG und ignoriert das Manifest;
      ohne dieses PNG legt Safari ein Bildschirmfoto der Seite als Symbol ab. -->
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
@@ -26,8 +27,53 @@
 </head>
 <body>
 
+<!-- Startbildschirm: sagt, warum nichts passiert.
+     Ohne ihn scheitert die App auf einem fremden Gerät stumm — die
+     Auswahlfelder bleiben leer, weil JavaScript sie befüllt, und wer davor
+     sitzt, sieht nur eine Fraktionsliste, die sich nicht öffnen lässt. Das
+     war der gemeldete Fehler auf iPad und iPhone.
+
+     Zwei Fälle, zwei Texte:
+     * <noscript> greift, wenn JavaScript ausgeschaltet ist — auf iOS der
+       Normalfall, wenn die Datei in einer Vorschau statt in Safari liegt.
+     * #boot blendet sich nach kurzer Zeit von selbst ein und wird von
+       app.js wieder entfernt, sobald der Start durch ist. Bleibt es stehen,
+       ist JavaScript zwar an, aber unterwegs gescheitert; die Ursache
+       schreibt app.js hinein. -->
+<noscript>
+  <div class="boot boot-visible">
+    <div class="boot-card">
+      <div class="boot-mark" aria-hidden="true"></div>
+      <h1>JavaScript ist ausgeschaltet</h1>
+      <p>Diese Datei <em>ist</em> die App — Regeln, Daten und Prüfung stecken
+         darin und laufen im Browser. Ohne JavaScript bleiben alle Auswahlfelder
+         leer.</p>
+      <p class="boot-hint"><strong>Auf iPad und iPhone:</strong> Tippt man die
+         Datei in „Dateien“ nur an, zeigt iOS eine Vorschau ohne JavaScript.
+         Stattdessen die Datei antippen, oben rechts auf <strong>Teilen</strong>
+         und dort einen Browser wählen — oder die App über den Rechner im
+         WLAN aufrufen.</p>
+    </div>
+  </div>
+</noscript>
+
+<div class="boot" id="boot" role="status" aria-live="polite">
+  <div class="boot-card">
+    <div class="boot-mark" aria-hidden="true"></div>
+    <h1 id="boot-title">Wird geladen …</h1>
+    <p id="boot-text">Die Regeldaten werden eingelesen. Bleibt dieser Hinweis
+       stehen, ist die App <strong>nicht</strong> gestartet — dann liegt es an
+       einem der beiden Punkte unten.</p>
+    <p class="boot-hint" id="boot-hint">Auf iPad und iPhone: In einer Vorschau
+       läuft kein JavaScript; die Datei gehört in einen Browser. Und ist sie für
+       das Gerät zu groß, reicht der Speicher nicht — dann neu bauen, mit
+       <code>--faction</code> und nur den eigenen Fraktionen.</p>
+  </div>
+</div>
+
 <header class="topbar">
   <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
     <strong>warhammer-meta</strong>
     <span class="mode" id="mode-badge" title="Anzeigetiefe der Regeltexte"></span>
   </div>

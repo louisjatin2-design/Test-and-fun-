@@ -33,6 +33,11 @@ STATIC = Path(__file__).resolve().parent / "static"
 #: So viele Partner je Synergieart wandern in die Offline-Datei.
 OFFLINE_SYNERGY_LIMIT = 6
 
+#: Ab dieser Größe weist der Build auf einen Build je Fraktion hin. Keine
+#: gemessene Grenze — ein Anhaltspunkt, der zwei Fraktionen (klein) von
+#: allen zwanzig (zweistellige MB) trennt.
+SIZE_HINT_MB = 8
+
 CONTEXT_REASON = (
     "Meta- und Synergiedaten brauchen die Turnierauswertung (Phasen 1–3) "
     "und die Synergie-Engine (Phase 5)."
@@ -216,6 +221,30 @@ def _strip_text(payload: dict) -> dict:
     return payload
 
 
+def _payload(data: dict) -> str:
+    """Die Daten als JSON-Text, sicher für ein ``<script>``-Element.
+
+    Zwei Eingriffe, beide gegen den HTML-Tokenizer und nicht gegen JSON:
+
+    * ``</`` wird zu ``<\\/``. Sonst beendet ein ``</script>`` mitten im
+      Regeltext das umschließende Element, und der Rest der Datei landet im
+      sichtbaren Dokument.
+    * ``<!--`` wird zu ``\\u003c!--``. Danach kann der Tokenizer nicht mehr in
+      seinen "escaped"-Zustand geraten, in dem ein späteres ``<script`` das
+      Ende der Daten verschieben würde.
+
+    Beides sind gültige JSON-Escapes; ``JSON.parse`` liefert wieder den
+    ursprünglichen Text. Und beide Muster können in JSON nur *innerhalb* einer
+    Zeichenkette stehen — außerhalb kommen ``<`` und ``/`` dort nicht vor.
+
+    ``separators`` spart die Leerzeichen hinter Komma und Doppelpunkt. Bei
+    allen Fraktionen sind das rund ein MB weniger, das ein Telefon nicht
+    laden, halten und durchsuchen muss.
+    """
+    text = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return text.replace("</", "<\\/").replace("<!--", "\\u003c!--")
+
+
 def render(data: dict) -> str:
     """Setzt Oberfläche, Engine und Daten zu einer Datei zusammen."""
     html = (STATIC / "index.html").read_text(encoding="utf-8")
@@ -223,18 +252,29 @@ def render(data: dict) -> str:
     rules_js = (STATIC / "rules.js").read_text(encoding="utf-8")
     app_js = (STATIC / "app.js").read_text(encoding="utf-8")
 
-    # `</script>` in den Regeltexten würde das umschließende Script beenden.
-    payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-
     html = html.replace(
         '<link rel="stylesheet" href="/static/styles.css">',
         f"<style>\n{css}\n</style>",
     )
+    # **Daten und Code in getrennte Elemente.** Früher stand beides in einem
+    # einzigen <script>: `window.WH_OFFLINE = { … }`, direkt gefolgt von
+    # rules.js und app.js. Ein Objektliteral muss der JavaScript-Parser aber
+    # vollständig verarbeiten, bevor die erste Zeile Code läuft — und bei
+    # allen Fraktionen sind das rund 13 MB. Reicht der Speicher dafür nicht,
+    # fällt das ganze Script aus, Oberfläche inklusive. Auf iPad und iPhone
+    # blieb davon eine Seite übrig, die aussah wie die App und in der sich
+    # keine Fraktion auswählen ließ: Die Auswahlfelder füllt app.js, und
+    # app.js lief nie.
+    #
+    # Als `type="application/json"` sind die Daten für den JavaScript-Parser
+    # gar nicht da. `JSON.parse` in app.js liest sie danach in einem Zug —
+    # sparsamer, schneller, und ein Fehler dabei ist ein normaler Fehler
+    # *im* Programm, den der Startbildschirm anzeigen kann.
     html = html.replace(
         '<script src="/static/rules.js"></script>\n'
         '<script src="/static/app.js"></script>',
+        f'<script type="application/json" id="wh-data">{_payload(data)}</script>\n'
         "<script>\n"
-        f"window.WH_OFFLINE = {payload};\n"
         f"{rules_js}\n{app_js}\n"
         "</script>",
     )
@@ -300,6 +340,19 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{args.out}  —  {len(data['factions'])} Fraktionen, {cards} Einheiten, "
           f"{size:.1f} MB")
     print(f"Regelstand {data['meta']['last_update']}, Modus '{args.mode}'.")
+
+    # Die Datei muss als Ganzes in den Speicher einer einzelnen Seite passen.
+    # Auf dem Rechner fällt das nicht auf, auf einem Telefon sehr wohl — und
+    # dort steht dann nur der Startbildschirm. Wer zwei Fraktionen spielt,
+    # braucht die anderen neunzehn nicht dabeizuhaben.
+    if size > SIZE_HINT_MB:
+        print(
+            f"\nHinweis: {size:.0f} MB in einer Datei sind für ein Telefon oder "
+            "ein älteres iPad viel. Falls sie dort nicht startet, hilft ein "
+            "Build mit nur den eigenen Fraktionen:\n"
+            "    python -m app.build_offline --faction SM --out dist/marines.html"
+        )
+
     if args.mode == "full":
         print(
             "\nHinweis: Die Datei enthält die vollständigen Regeltexte. Sie ist "
