@@ -19,3 +19,11 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+
+# AoS-Kampagnen-Manager: Ausnahme auf ausdrücklichen Wunsch des Repo-Besitzers –
+# die Punkteliste (Namen, Punkte, Modellzahl aus den GW-Schlachtprofilen) wird
+# für das Cloudflare-Pages-Deployment mit eingecheckt.
+!aos-kampagne/public/data/
+aos-kampagne/.wrangler/
+aos-kampagne/wrangler.toml
+aos-kampagne/node_modules/

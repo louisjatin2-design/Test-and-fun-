@@ -1,0 +1,10 @@
+# Nur für lokale Entwicklung. In Cloudflare wird die D1-Datenbank im Dashboard
+# als Binding "DB" verbunden (Pages-Projekt → Settings → Bindings).
+name = "aos-kampagne"
+pages_build_output_dir = "public"
+compatibility_date = "2025-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "aos-kampagne"
+database_id = "local-dev"
