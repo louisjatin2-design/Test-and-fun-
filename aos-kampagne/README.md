@@ -15,28 +15,22 @@ Webapp als Game Master für eure Age-of-Sigmar-Kampagne mit 2–4 Spielern. Zwei
 - **Aftermath-Assistent:** Schritt für Schritt, Würfel per App oder echtes Ergebnis eintippen, Währung und Wunden werden automatisch verrechnet.
 - **Rangliste, Spielverlauf, Regelwerk** zum Nachschlagen (deutsche Kurzfassungen), Live-Stand alle 5 Sekunden, Handy-Ansicht.
 
-## Einrichtung (einmalig, ca. 10 Minuten, kostenlos)
+## Einrichtung bei Cloudflare (Workers, kostenlos)
 
-1. **Cloudflare-Konto** anlegen: <https://dash.cloudflare.com/sign-up>
-2. **Datenbank:** *Storage & Databases → D1 → Create* → Name `aos-kampagne`.
-3. **Schema einspielen:** Datenbank öffnen → *Console* → Inhalt von [`sql/001_schema.sql`](sql/001_schema.sql) einfügen → *Execute*.
-4. **Seite verbinden:** *Workers & Pages → Create → Pages → Connect to Git* → Repo `test-and-fun-` wählen.
-   - Production branch: `claude/wh40k-tournament-ranker-5shjc8` (der Standard-Branch des Repos)
-   - Framework preset: *None*
-   - Build command: *leer lassen*
-   - **Root directory:** `aos-kampagne`
-   - **Build output directory:** `public`
-   - *Save and Deploy*
-5. **Datenbank anbinden:** Pages-Projekt → *Settings → Bindings → Add → D1 database* → Variable name `DB`, Datenbank `aos-kampagne` → speichern → unter *Deployments* einmal *Retry deployment*.
-6. Die Seite öffnen (`https://<projektname>.pages.dev`) → **Master-Login anlegen** (nur beim allerersten Besuch möglich).
+1. Cloudflare-Konto → *Workers & Pages → Create → Import a repository* → Repo `test-and-fun-` wählen.
+   - Deploy command: `npx wrangler deploy` (Standard), Root directory: leer lassen (Hauptordner).
+2. Fertig. Beim Deploy liest wrangler die Datei `wrangler.jsonc` im Hauptordner, legt die D1-Datenbank `aos-kampagne` an (oder verknüpft eine vorhandene gleichen Namens) und lädt die Seite hoch. Die Tabellen legt die App beim ersten Aufruf selbst an.
+3. Die Worker-Adresse öffnen (`https://<name>.<konto>.workers.dev`) → **Master-Login anlegen**.
+
+Wichtig: `"name"` in `wrangler.jsonc` muss genau dem Namen des Workers im Cloudflare-Dashboard entsprechen.
+
+Alternativ geht es weiterhin mit Cloudflare Pages: Root directory `aos-kampagne`, Build output `public`, D1-Binding `DB` im Dashboard. Das Schema steht in [`sql/001_schema.sql`](sql/001_schema.sql), wird aber auch automatisch angelegt.
 
 ## Lokal entwickeln
 
 ```bash
-cd aos-kampagne
-cp wrangler.example.toml wrangler.toml
-npx wrangler d1 execute aos-kampagne --local --file sql/001_schema.sql
-npx wrangler pages dev public
+# im Hauptordner des Repos
+npx wrangler dev
 ```
 
 ## Aufbau
@@ -46,9 +40,10 @@ public/            Statische Seite (HTML, CSS, JS ohne Build-Schritt)
   js/packs.js      Battlepacks: Karte, Zonen, Routen, Freischaltung (auch vom Server genutzt)
   js/rules.js      Regeldaten & Tabellen (deutsche Kurzfassungen)
   data/units.json  Einheiten & Punkte (aus den GW-Schlachtprofilen Oktober 2026)
-functions/api/     Cloudflare Pages Function – leitet an src/server.js weiter
+src/worker.js      Einstieg für Cloudflare Workers (/api → Schnittstelle, sonst statische Dateien)
+functions/api/     Alternative für Cloudflare Pages – leitet an src/server.js weiter
 src/server.js      Schnittstelle: Login, Kampagnen, Züge, Begegnungen, Ergebnisse
-sql/               Datenbankschema für D1
+sql/               Datenbankschema für D1 (src/schema.js wird daraus erzeugt und beim ersten Aufruf ausgeführt)
 tools/parse_bp.py  Erzeugt units.json aus der Schlachtprofile-PDF
 ```
 
