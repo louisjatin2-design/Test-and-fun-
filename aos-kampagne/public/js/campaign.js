@@ -1,6 +1,8 @@
 // Kampagnen-Hülle: Kopfzeile, Tabs, Lage, Rangliste, Verlauf.
 import { h, badge, toast, fmtDate, confirmBox } from './ui.js';
-import { S, me, pack, playerById, unitsOf, rosterPoints, generalOf, locName, currentMatches, myMatch, sideOf, opponentName, colorOf, api, loadState, store } from './store.js';
+import { S, me, pack, playerById, unitsOf, rosterPoints, generalOf, locName, currentMatches, myMatch, sideOf, opponentName, colorOf, api, loadState, store, nextJobRound, unitJob, JOBS, livePoints } from './store.js';
+import { jobSelect } from './roster.js';
+import { foodFactor } from './packs.js';
 import { RANKS } from './packs.js';
 import { renderMap } from './map.js';
 import { renderRoster, rosterProblems } from './roster.js';
@@ -19,6 +21,8 @@ export function renderCampaign(tab, rest, nav) {
       h('div.camp-sub', `${p.name} · ${c.current_round ? 'Runde ' + c.current_round + ' · ' : ''}${nav.phaseLabel(c.phase)}`)),
     h('div.topbar-right',
       mine ? h('span.vault', { title: p.currency.name }, `${p.currency.icon} ${mine.vault} ${p.currency.short}`) : null,
+      mine ? h('span.vault.food', { title: 'Nahrung' }, `🍖 ${mine.data.food ?? S().campaign.points_limit}`) : null,
+      mine && p.id === 'rc' ? h('span.vault.gold', { title: 'Gold' }, `🪙 ${mine.data.gold || 0}`) : null,
       st.me.admin && store.adminCid ? h('a.btn.small', { href: '#/master', onClick: () => { store.adminCid = null; } }, '👑') : null,
       mine ? h('button.btn.ghost.small', { onClick: nav.logout, title: 'Abmelden' }, '⎋') : null));
   const tabs = h('nav.tabs', TABS.map(([id, icon, label]) => h('a.tab' + (id === tab || (tab === 'spiel' && id === 'spiele') || (tab === 'aftermath' && id === 'spiele') ? '.active' : ''), { href: '#/c/' + id }, h('span.tab-icon', icon), h('span.tab-label', label))));
@@ -88,6 +92,19 @@ function renderLage(nav) {
             : h('a.btn.big', { href: '#/c/aftermath/' + m.id }, 'Aftermath starten →')));
     }
     cards.push(h('div.card', h('h3', 'Alle Begegnungen dieser Runde'), matchList(currentMatches())));
+  }
+  if (mine && c.phase !== 'finished') {
+    const nr = nextJobRound(mine.id);
+    const us = unitsOf(mine.id);
+    if (nr != null && us.length) {
+      const factor = foodFactor(c.pack, mine.pending_move || mine.location_key);
+      const need = us.reduce((a, u) => a + Math.round(livePoints(u) * (100 - factor) / 100), 0);
+      cards.push(h('div.card',
+        h('h3', `Aufträge für Runde ${nr}`),
+        h('p.small', 'Zu Beginn des Zuges kannst du Einheiten losschicken. Alles außer „Kämpfen“ verpasst die Schlacht dieser Runde: 😴 Erholen (max. 1, heilt W6 Kampfwunden, dauerhaft tote Modelle gegen Bezahlung zurückholen) · ⛏ Schürfen (' + (c.pack === 'rc' ? 'W3 Splitter' : 'W6×10 GP') + ') · 🌾 Nahrung sammeln (Punktwert × W6 × 20 %, bei 1 eine Kampfwunde).'),
+        h('ul.job-list', us.map(u => h('li', h('span', u.is_general ? '👑 ' : '', u.name, h('span.muted.small', ` ${livePoints(u)} Pkt`), u.data.hungry ? ' 🍖' : ''), jobSelect(u)))),
+        h('p.muted.small', `🍖 Vorrat ${mine.data.food ?? S().campaign.points_limit} · voraussichtlicher Bedarf nach dieser Runde ca. ${need} (Feld deckt ${factor} %).`)));
+    }
   }
   cards.push(h('div.card', h('h3', 'Stand'), rankingTable(true)));
   return h('div.stack', cards);

@@ -74,3 +74,55 @@ export async function rosterOps(ops, log, playerId) {
   return r;
 }
 export async function logDice(text) { try { await api('dice', { text }); } catch { /* egal */ } }
+
+// ---------- Modelle, Aufträge, Versorgung (Hausregeln) ----------
+export const fullModels = u => (u.models || 1) * (u.reinforced ? 2 : 1);
+export const aliveModels = u => Math.max(0, fullModels(u) - ((u.data && u.data.lost) || 0));
+export const perModel = u => Math.round((u.points || 0) / (u.models || 1));
+// Punktwert der noch lebenden Modelle (für Armeepunkte in der Schlacht und Nahrungsbedarf)
+export const livePoints = u => fullModels(u) > 1 ? Math.round(unitPoints(u) * aliveModels(u) / fullModels(u)) : unitPoints(u);
+export const JOBS = {
+  fight: { label: 'Kämpfen', icon: '⚔' },
+  rest: { label: 'Erholen', icon: '😴' },
+  mine: { label: 'Schürfen', icon: '⛏' },
+  forage: { label: 'Nahrung sammeln', icon: '🌾' },
+};
+export function unitJob(u, round) {
+  const d = u.data || {};
+  if (d.job && d.job.round === round) return d.job.type;
+  if (d.rest_round === round) return 'rest';
+  return 'fight';
+}
+// Status einer Einheit in einem Spiel: field | reserve | rest | mine | forage | out
+export function unitStatus(m, u, rep) {
+  const job = unitJob(u, m.round);
+  if (job !== 'fight') return job;
+  if (aliveModels(u) <= 0) return 'out';
+  const r = ((rep || m.report || {}).units || {})[u.id];
+  return r && r.status === 'reserve' ? 'reserve' : 'field';
+}
+export const plays = st => st === 'field' || st === 'reserve';
+// Für welche Runde gilt ein jetzt gesetzter Auftrag?
+export function nextJobRound(pid) {
+  const st = S(), c = st.campaign;
+  if (c.phase === 'finished') return null;
+  if (c.phase === 'lobby') return 1;
+  if (c.phase === 'move') return c.current_round;
+  const m = currentMatches().find(x => x.player_a === pid || x.player_b === pid);
+  return m && m.status !== 'done' ? c.current_round : c.current_round + 1;
+}
+export async function setJob(u, type) {
+  const round = nextJobRound(u.player_id);
+  if (round == null) return;
+  if (type === 'rest' && unitsOf(u.player_id).some(x => x.id !== u.id && unitJob(x, round) === 'rest')) {
+    toast('Nur 1 Einheit darf sich pro Schlacht erholen.', 'error'); return false;
+  }
+  const d = { rest_round: null, job: type && type !== 'fight' ? { round, type } : null };
+  await rosterOps([{ op: 'update', id: u.id, data: d }], type && type !== 'fight'
+    ? `${u.name}: Auftrag „${JOBS[type].label}“ für Runde ${round} (verpasst die Schlacht).`
+    : `${u.name} kämpft in Runde ${round} wieder mit.`, u.player_id);
+  return true;
+}
+// Rückwärtskompatibel
+export const nextRestRound = nextJobRound;
+export const setResting = (u, on) => setJob(u, on ? 'rest' : 'fight');

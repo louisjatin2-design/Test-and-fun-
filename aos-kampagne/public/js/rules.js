@@ -328,7 +328,8 @@ export function rulebook(packId) {
       '**Zug:** Jeder wählt geheim ein Feld. Erst wenn alle gezogen haben, deckt die App alle Züge gleichzeitig auf.',
       '**Begegnungen:** Stehen zwei Spieler auf demselben Feld, kämpfen sie gegeneinander. Wer allein steht, wird mit einem anderen Spieler gepaart, der ebenfalls allein steht. Bleibt einer übrig, kämpft er gegen einen Gastspieler (eine außenstehende Person).',
       '**Ergebnis:** Ein Beteiligter trägt Sieger, Siegpunkte und Verluste ein. Der Sieger übernimmt sein Feld; wer auf demselben Feld verliert, zieht sich auf sein vorheriges Feld zurück.',
-      '**Aftermath:** Danach geht jeder Spieler den Aftermath-Assistenten durch. Sind alle Spiele und Aftermaths fertig, startet die nächste Runde automatisch.',
+      '**Aufträge:** Zu Beginn der Runde kannst du Einheiten zum Erholen, Schürfen oder Nahrungssammeln schicken – sie verpassen dann die Schlacht.',
+      '**Aftermath:** Danach geht jeder Spieler den Aftermath-Assistenten durch (inkl. Versorgung). Sind alle Spiele und Aftermaths fertig, startet die nächste Runde automatisch.',
       'Der Master kann jederzeit Züge aufdecken, die Runde weiterschalten, Spieler entfernen und PINs zurücksetzen.',
     ] },
     { id: 'roster', title: 'Roster erstellen', body: packId === 'bw' ? [
@@ -359,7 +360,7 @@ export function rulebook(packId) {
         '**Schlachtplan:** Der Spieler mit dem niedrigsten General-Rang wählt einen Schlachtplan, den **beide** freigeschaltet haben (am Anfang nur Thyria\'s Bounty und Forest Fortress). Gleicher Rang: Würfeln, der Gewinner wählt.',
         '**Routen entdecken:** Thyrian Paths (durchgezogen) werden nach einer Schlacht mit diesem Schlachtplan entdeckt. Concealed Trails (rot) erst nach einem Sieg mit diesem Schlachtplan. In der App gilt: Wer mit dem Plan gewonnen hat, entdeckt dessen verborgene Pfade.',
         '**Verseuchung:** Abwechselnd je ein Gelände außerhalb des eigenen Gebiets verseuchen, dann jedes übrige Gelände auf 4+ verseucht (nicht Fraktionsgelände/Landmark).',
-        '**Ruhende Einheit:** Jeder darf 1 Einheit ruhen lassen – sie spielt nicht mit und zählt nicht zu den Punkten. Im Aftermath heilt sie W6 Kampfwunden.',
+        '**Ruhende Einheit:** Jeder darf 1 Einheit ruhen lassen – sie spielt nicht mit und zählt nicht zu den Punkten. Im Aftermath heilt sie W6 Kampfwunden. In der App ist das der Auftrag „😴 Erholen“ (siehe Hausregeln).',
         '**Ungleiche Armeen:** Ab 100 Punkten Unterschied hat die größere Armee eine Übermacht. Überschuss = Differenz − 100. So viele Punkte müssen als „Stalled Reinforcements“ in Reserve (ab Runde 2 auf 4+ einsetzbar; −1 für Held/verstärkt, −1 für Monster).',
         '**Underdog:** wer weniger Siegpunkte hat. Wer die Initiative ergreift (als Zweiter den Prioritätswurf gewinnt und zuerst zieht), macht seinen Gegner für den Rest der Schlacht zum Underdog.',
         '**Blighted Waters (Pflicht, jeder Zug):** zufälliges verseuchtes Gelände – Einheiten in 3" machen einen Verseuchungswurf (W3): 1 = 1 tödlicher Schaden, 2+ = STRIKE-LAST.',
@@ -377,6 +378,7 @@ export function rulebook(packId) {
         '**Collect Emberstone (Ende deines Zuges, 1× pro Armee):** Kontrollierter Cluster, Einheit in 3": 1 = W3 tödlicher Schaden an allen in 3", 2–6 = Emberstone-Marke.',
         '**Filled with Fury:** Mit Marke −1 auf Rettung, +1 auf Verwunden. Stirbt die Einheit, fällt der Cluster wieder auf das Feld.',
         '**Dig for Emberstone (Schlachtende):** Für jedes kontrollierte Ziel eine Einheit: 1 = 1 Kampfwunde, 4+ = Emberstone-Marke.',
+        '**Erholung (Hausregel wie in Blighted Wilds):** Jeder darf 1 Einheit pro Schlacht ruhen lassen – Auftrag „😴 Erholen“ (siehe Hausregeln).',
         '**Ungleiche Armeen:** Ab 200 Punkten Unterschied: Überschuss = Differenz − 200; so viele Punkte als „Stalled Reinforcements“ in Reserve (auf 4+ in der Bewegungsphase einsetzbar).',
         '**Twists:** Würfle auf der Twist-Tabelle; der Underdog (weniger Siegpunkte) würfelt jede Runde auf der gewählten Twist-Tabelle.',
         '**Aqshian Anger:** Wer „All-out Attack“ nutzt, wird für die Phase leichter getroffen (+1 Treffen gegen ihn).',
@@ -403,7 +405,8 @@ export function rulebook(packId) {
       '**Instabile Waffen:** Für jede Emberstone-Waffe, die nicht in diesem Aftermath geschmiedet wurde, W6 – bei 1 zerbricht sie und der Held erleidet 1 Kampfwunde.',
     ] },
     { id: 'wunden', title: 'Kampfwunden, Narben und Heilung', body: [
-      ...(packId === 'bw' ? ['**Ruhende Einheiten** heilen zuerst W6 Kampfwunden.'] : []),
+      '**Ruhende Einheiten** (Auftrag Erholen) heilen zuerst W6 Kampfwunden.',
+      '**Gestorbene Modelle:** je W6, bei 1 dauerhaft tot (Hausregel).',
       '**Kampfwunden:** Jede vernichtete Einheit erleidet W3.',
       packId === 'bw' ? '**Verseuchung:** Jede Einheit, die am Schlachtende in 3" eines verseuchten Geländes stand, erleidet 1 Kampfwunde.' : '**Emberstone:** Jede Einheit, die am Ende eine Emberstone-Marke hatte, würfelt: 1–4 = 1 Kampfwunde.',
       '**Untimely Arrival:** Reserve-Einheiten, die nie aufs Feld kamen, erleiden keine Kampfwunden.',
@@ -419,6 +422,16 @@ export function rulebook(packId) {
       'Bei jedem Rang wählst du **eine von zwei** Fähigkeiten. Wechselst du den Pfad, sinkt der Rang um 1 und du wählst die Fähigkeiten des neuen Pfads neu.',
       'Einzigartige Einheiten dürfen keinen Pfad betreten. Pfade aus dem Battletome eurer Fraktion sind ebenfalls erlaubt (in der App als „eigener Pfad“ eintragbar).',
     ], paths: true },
+    { id: 'hausregeln', title: 'Hausregeln: Aufträge, Verluste & Versorgung', body: [
+      '**Aufträge zu Beginn jeder Runde** (unter „Lage“ oder an der Einheit unter „Armee“): ⚔ Kämpfen · 😴 Erholen · ⛏ Schürfen · 🌾 Nahrung sammeln. Jede Einheit mit einem anderen Auftrag als Kämpfen ist in der Schlacht dieser Runde **gesperrt** und zählt nicht zu den Armeepunkten.',
+      '**😴 Erholen** (max. 1 Einheit pro Schlacht): heilt im Aftermath W6 Kampfwunden. Außerdem kannst du dauerhaft tote Modelle zurückholen: Pro Modell zahlst du dessen Punktwert (Punkte der Einheit ÷ Modellzahl) in ' + (packId === 'rc' ? '**Gold**' : '**GP**') + ', dann würfelst du je Modell einen W6 – bei 1 kommt es nicht zurück, bei 2+ kehrt es zurück. Bezahlt ist bezahlt.',
+      '**⛏ Schürfen:** ' + (packId === 'rc' ? 'W3 Emberstone-Splitter.' : 'W6 × 10 GP.'),
+      '**🌾 Nahrung sammeln:** Punktwert der Einheit × W6 × 20 % Nahrung. Bei einer 1 erleidet die Einheit 1 Kampfwunde (Unfall).',
+      '**Gestorbene Modelle:** Nach jeder Schlacht würfelst du für jedes Modell, das gestorben ist (auch bei vernichteten Einheiten und Einzelmodellen), einen W6. Bei **1 ist es dauerhaft tot** und kommt nur über „Erholen“ zurück; bei 2+ ist es wieder dabei. Eine Einheit ohne lebende Modelle kann nicht kämpfen.',
+      packId === 'rc' ? '**🪙 Gold:** Nach jeder Schlacht wie Ruhmespunkte aus Blighted Wilds: geschlagen 60/110/150/180/200, großer Sieg +30/40/50/55/60, General lebt +10/15/20/25/30 (je nach Punkten der gegnerischen Armee). Gold bezahlt das Zurückholen von Modellen.' : '**Bezahlen:** Das Zurückholen von Modellen kostet GP.',
+      '**🍖 Nahrung:** Du startest mit so viel Nahrung wie die Startpunkte. Nach jeder Schlacht bekommst du als Beute die Punkte aller feindlichen Modelle, die du getötet hast. Dann braucht jede Einheit so viel Nahrung, wie ihre lebenden Modelle Punkte kosten – abzüglich des Anteils, den das Feld deckt, auf dem du stehst (je nach Feld 10–45 %, im Lager 25 %).',
+      '**Hunger:** Reicht die Nahrung nicht, wählst du, wer nichts bekommt. Eine Einheit hält **eine Runde** Hunger aus; wird sie in der nächsten Runde wieder nicht gefüttert, **verlässt sie die Armee**.',
+    ] },
     { id: 'sieg', title: 'Kampagnensieg', body: [
       packId === 'bw'
         ? 'Die Kampagne endet, sobald jemand einen **großen Sieg in „Be It Purity or Putrescence“** erringt. Er erhält die Blighted-Wilds-Trophäe und die Fähigkeit „Purifiers of the Blighted Wilds“ (1× pro Schlacht Heilen (3) bei jeder befreundeten Einheit).'

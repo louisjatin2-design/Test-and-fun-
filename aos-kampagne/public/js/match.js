@@ -1,6 +1,6 @@
 // Spiele: Liste, Spielvorbereitung (Schlachtplan, Feld/Reserve), Ergebnis.
 import { h, toast, badge, select, field, diceInput, confirmBox, rollDie } from './ui.js';
-import { S, me, pack, playerById, unitsOf, unitPoints, generalOf, colorOf, locName, api, loadState, logDice, sideOf } from './store.js';
+import { S, me, pack, playerById, unitsOf, unitPoints, generalOf, colorOf, locName, api, loadState, logDice, sideOf, unitStatus, plays, livePoints, fullModels, aliveModels, JOBS } from './store.js';
 import { RC, BW, rollOnRange } from './rules.js';
 import { RANKS } from './packs.js';
 import { matchList } from './campaign.js';
@@ -52,11 +52,12 @@ export function renderMatch(id) {
 
   // ----- Schlachtplan
   const bpBox = h('div.card');
+  const add = (...xs) => bpBox.append(...xs.flat(Infinity).filter(x => x != null && x !== false));
   const bpName = m.battleplan;
   if (p.id === 'rc') {
     const t = RC.tables[m.table_key || 'outskirts'];
     const rows = h('table.table.small', h('tbody', t.rows.map(r => h('tr' + (r[1] === bpName ? '.me' : ''), h('td', Array.isArray(r[0]) ? `${r[0][0]}–${r[0][1]}` : r[0]), h('td', r[1])))));
-    bpBox.append(h('h3', 'Schlachtplan'),
+    add(h('h3', 'Schlachtplan'),
       h('p', `Tabelle: `, h('strong', t.name), ` · Es würfelt: ${pickerText}.`),
       rows,
       canEdit && m.status !== 'done' && m.table_key !== 'claw' ? h('div.row.wrap',
@@ -83,22 +84,23 @@ export function renderMatch(id) {
   } else {
     const common = bwCommonPlans(m);
     const info = BW.battleplans[bpName];
-    bpBox.append(h('h3', 'Schlachtplan'),
+    add(h('h3', 'Schlachtplan'),
       h('p', `Es wählt: ${pickerText} – aus den Schlachtplänen, die ihr beide freigeschaltet habt.`),
       canEdit && m.status !== 'done' ? select(common, bpName || common[0], async v => { await save({ battleplan: v }, `wählt den Schlachtplan ${v}.`); window.__redraw(); }) : null,
       bpName ? h('div.bp', h('strong', bpName), info ? h('div', h('p', info.win),
         h('p.small', h('b', 'Fähigkeits-Belohnung: '), info.ability[0], ' – ', info.ability[1]),
         h('p.small', h('b', 'Sonstige Belohnung: '), info.misc)) : null) : null);
   }
-  bpBox.append(h('p.tiny', h('a', { href: p.wahapedia, target: '_blank', rel: 'noopener' }, 'Vollständige Schlachtplan-Karten auf Wahapedia ↗')));
+  add(h('p.tiny', h('a', { href: p.wahapedia, target: '_blank', rel: 'noopener' }, 'Vollständige Schlachtplan-Karten auf Wahapedia ↗')));
 
   // ----- Feld-Übersicht
   const sides = [['a', m.player_a], ['b', m.player_b]];
-  const sum = (pid, st2) => unitsOf(pid).filter(u => (rep.units[u.id]?.status || 'field') === st2).reduce((a, u) => a + unitPoints(u), 0);
+  const sum = (pid, st2) => unitsOf(pid).filter(u => unitStatus(m, u, rep) === st2).reduce((a, u) => a + livePoints(u), 0);
+  const away = pid => unitsOf(pid).filter(u => !plays(unitStatus(m, u, rep))).reduce((a, u) => a + livePoints(u), 0);
   const armyPts = side => {
     const pid = side === 'a' ? m.player_a : m.player_b;
     if (!pid) return Number(rep.guest_points) || 0;
-    return unitsOf(pid).filter(u => (rep.units[u.id]?.status || 'field') !== 'rest').reduce((a, u) => a + unitPoints(u), 0);
+    return unitsOf(pid).filter(u => plays(unitStatus(m, u, rep))).reduce((a, u) => a + livePoints(u), 0);
   };
   const pa = armyPts('a'), pb = armyPts('b');
   const thr = p.id === 'bw' ? 100 : 200;
@@ -117,15 +119,16 @@ export function renderMatch(id) {
     const us = unitsOf(pid);
     return h('div.field-col',
       h('h4', h('span.dot', { style: { background: colorOf(pid) } }), playerById(pid)?.name),
-      h('div.pts-row', badge(`Feld ${sum(pid, 'field')}`, 'ok'), badge(`Reserve ${sum(pid, 'reserve')}`), p.id === 'bw' ? badge(`Ruhend ${sum(pid, 'rest')}`) : null, badge(`Armee ${armyPts(side)}`, 'gold')),
+      h('div.pts-row', badge(`Feld ${sum(pid, 'field')}`, 'ok'), badge(`Reserve ${sum(pid, 'reserve')}`), badge(`Aufträge/abwesend ${away(pid)}`), badge(`Armee ${armyPts(side)}`, 'gold')),
       h('ul.field-units', us.map(u => {
-        const cur = rep.units[u.id]?.status || 'field';
-        const opts = [['field', 'Feld'], ['reserve', 'Reserve'], ...(p.id === 'bw' ? [['rest', 'Ruhend']] : [])];
-        return h('li', h('span', u.is_general ? '👑 ' : u.is_hero ? '★ ' : '', u.name, h('span.muted.small', ` ${unitPoints(u)}`)),
-          editable ? select(opts, cur, async v => {
-            if (v === 'rest' && us.some(x => x.id !== u.id && rep.units[x.id]?.status === 'rest')) return toast('Nur 1 Einheit darf ruhen.', 'error');
+        const cur = unitStatus(m, u, rep);
+        const opts = [['field', 'Feld'], ['reserve', 'Reserve']];
+        const models = fullModels(u) > 1 ? ` · ${aliveModels(u)}/${fullModels(u)} Mod.` : '';
+        const lockBadge = cur === 'out' ? badge('keine Modelle mehr', 'warn') : JOBS[cur] ? badge(`${JOBS[cur].icon} ${JOBS[cur].label} – gesperrt`, 'warn') : null;
+        return h('li', h('span', u.is_general ? '👑 ' : u.is_hero ? '★ ' : '', u.name, h('span.muted.small', ` ${livePoints(u)}${models}`), u.data.hungry ? ' 🍖' : ''),
+          lockBadge || (editable ? select(opts, cur, async v => {
             rep.units[u.id] = { ...(rep.units[u.id] || {}), status: v }; await save(); window.__redraw();
-          }) : badge(opts.find(o => o[0] === cur)[1]));
+          }) : badge(opts.find(o => o[0] === cur)[1])));
       })));
   });
   const fieldBox = h('div.card',
@@ -134,7 +137,7 @@ export function renderMatch(id) {
       overSide ? h('span', h('strong', `${overSide === 'a' ? nameA(m) : nameB(m)} hat eine Übermacht`), ` (Differenz ${diff} − ${thr} = `, h('strong', surplus + ' Punkte'), ' müssen als „Stalled Reinforcements“ in Reserve). ', reserveOk ? badge('erfüllt', 'ok') : badge('noch zu wenig in Reserve', 'warn'))
         : `Keine Übermacht (Schwelle ${thr} Punkte).`),
     h('div.field-grid', fieldCols),
-    p.id === 'bw' ? h('p.tiny.muted', 'Ruhende Einheiten spielen nicht mit, zählen nicht zu den Armeepunkten und heilen im Aftermath W6 Kampfwunden.') : null);
+    h('p.tiny.muted', 'Einheiten mit Auftrag (Erholen, Schürfen, Nahrung sammeln) sind in dieser Schlacht gesperrt und zählen nicht zu den Armeepunkten. Armeepunkte zählen nur lebende Modelle. 🍖 = hungert.'));
 
   // ----- Ergebnis
   let resultBox;
@@ -170,20 +173,37 @@ function resultForm(m, rep, na, nb) {
   const unitRows = [m.player_a, m.player_b].filter(Boolean).map(pid => h('div.field-col',
     h('h4', h('span.dot', { style: { background: colorOf(pid) } }), playerById(pid)?.name),
     h('table.table.small',
-      h('thead', h('tr', h('th', 'Einheit'), h('th', 'vernichtet'), p.id === 'rc' ? h('th', 'Emberstone-Marke') : h('th', 'in 3" verseucht'), p.id === 'bw' ? h('th', 'Purify ✓') : h('th', 'nie eingesetzt'))),
-      h('tbody', unitsOf(pid).filter(u => (rep.units[u.id]?.status || 'field') !== 'rest').map(u => {
+      h('thead', h('tr', h('th', 'Einheit'), h('th', 'vernichtet'), h('th', 'Modelle verloren'), p.id === 'rc' ? h('th', 'Emberstone-Marke') : h('th', 'in 3" verseucht'), p.id === 'bw' ? h('th', 'Purify ✓') : h('th', 'nie eingesetzt'))),
+      h('tbody', unitsOf(pid).filter(u => plays(unitStatus(m, u, rep))).map(u => {
         const r = rep.units[u.id] = rep.units[u.id] || { status: 'field' };
         const cb = (key) => h('input', { type: 'checkbox', checked: !!r[key], onChange: e => { r[key] = e.target.checked; } });
         const num = h('input.tiny-in', { type: 'number', min: 0, max: 9, value: r.purify || 0, onChange: e => { r.purify = Number(e.target.value) || 0; } });
-        return h('tr', h('td', u.name), h('td', cb('destroyed')), h('td', p.id === 'rc' ? cb('token') : cb('contaminated')),
+        const alive = aliveModels(u);
+        const lost = alive > 1 ? h('input.tiny-in', { type: 'number', min: 0, max: alive, value: r.lost || 0, title: `von ${alive}`, onChange: e => { r.lost = Math.min(alive, Math.max(0, Number(e.target.value) || 0)); } }) : '–';
+        return h('tr', h('td', u.name, alive > 1 ? h('span.tiny.muted', ` (${alive})`) : null), h('td', cb('destroyed')), h('td', lost), h('td', p.id === 'rc' ? cb('token') : cb('contaminated')),
           h('td', p.id === 'bw' ? num : (r.status === 'reserve' ? cb('untimely') : '–')));
       })))));
+  const guestKills = !m.player_b ? h('input', { type: 'number', min: 0, value: rep.guest_killed_points || 0 }) : null;
   const renownA = h('input', { type: 'number', min: 0, value: rep.renown_a || 0 });
   const renownB = h('input', { type: 'number', min: 0, value: rep.renown_b || 0 });
   const btn = h('button.btn.big', { onClick: async () => {
     if (!result) return toast('Bitte das Ergebnis wählen.', 'error');
     if (!m.battleplan && !(await confirmBox('Es ist noch kein Schlachtplan eingetragen. Trotzdem speichern?', 'Speichern'))) return;
     if (p.id === 'rc') { rep.renown_a = Number(renownA.value) || 0; rep.renown_b = Number(renownB.value) || 0; }
+    if (guestKills) rep.guest_killed_points = Number(guestKills.value) || 0;
+    // Punkte getöteter Modelle je Seite (für die Nahrung des Gegners) und Modellzahl zur Schlachtzeit festhalten
+    for (const [side, pid] of [['a', m.player_a], ['b', m.player_b]]) {
+      if (!pid) continue;
+      let pts = 0;
+      for (const u of unitsOf(pid)) {
+        if (!plays(unitStatus(m, u, rep))) continue;
+        const r = rep.units[u.id] = rep.units[u.id] || { status: 'field' };
+        r.alive_at_battle = aliveModels(u);
+        const dead = r.destroyed ? aliveModels(u) : Math.min(aliveModels(u), r.lost || 0);
+        pts += dead * (fullModels(u) > 1 ? Math.round(unitPoints(u) / fullModels(u)) : unitPoints(u));
+      }
+      rep['killed_pts_' + side] = pts;
+    }
     btn.disabled = true;
     try {
       await api('match/' + m.id, { op: 'result', result, vp_a: vpa.value === '' ? null : Number(vpa.value), vp_b: vpb.value === '' ? null : Number(vpb.value), report: rep, battleplan: m.battleplan });
@@ -198,6 +218,8 @@ function resultForm(m, rep, na, nb) {
     h('p.small.muted', p.id === 'bw' ? 'Bei Punktgleichstand gewinnt, wer mehr Gelände gereinigt hat, einen kleinen Sieg.' : 'Mehr Siegpunkte = großer Sieg, Gleichstand = Unentschieden (sofern der Schlachtplan nichts anderes sagt).'),
     h('h4', 'Was ist passiert?'),
     h('div.field-grid', unitRows),
+    h('p.tiny.muted', 'Modelle verloren: Verluste bleiben bestehen, bis die Einheit sich erholt (Hausregel). „vernichtet“ = alle Modelle verloren. Die getöteten Modellpunkte bringen dem Gegner Nahrung.'),
+    guestKills ? field('Punkte der getöteten Gast-Modelle (für deine Nahrung)', guestKills) : null,
     p.id === 'rc' ? h('div.grid2', field(`Ruhmpunkte aus Fähigkeiten (${na})`, renownA, '5 = 1 Splitter'), m.player_b ? field(`Ruhmpunkte aus Fähigkeiten (${nb})`, renownB) : h('div')) : null,
     btn);
 }

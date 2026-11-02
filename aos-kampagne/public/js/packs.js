@@ -6,26 +6,26 @@ export const RANK_DE = ['Kein Rang', 'Aufstrebend (Aspiring)', 'Elite', 'Mächti
 
 const RC_NODES = [
   // Scorched Outskirts / Adamantine Chain
-  { key: 'o1', name: 'Schmiedepass', zone: 'outskirts', x: 95, y: 95 },
-  { key: 'o2', name: 'Aschental', zone: 'outskirts', x: 255, y: 70 },
-  { key: 'o3', name: 'Rauchschlot-Klamm', zone: 'outskirts', x: 190, y: 220 },
-  { key: 'o4', name: 'Glutfeld', zone: 'outskirts', x: 75, y: 345 },
-  { key: 'o5', name: 'Basaltwacht', zone: 'outskirts', x: 300, y: 320 },
-  { key: 'o6', name: 'Schlackenhang', zone: 'outskirts', x: 185, y: 460 },
-  { key: 'o7', name: 'Verbrannte Senke', zone: 'outskirts', x: 85, y: 575 },
-  { key: 'o8', name: 'Eisenkamm-Feste', zone: 'outskirts', x: 315, y: 560 },
+  { key: 'o1', name: 'Schmiedepass', zone: 'outskirts', x: 95, y: 95, food: 25 },
+  { key: 'o2', name: 'Aschental', zone: 'outskirts', x: 255, y: 70, food: 30 },
+  { key: 'o3', name: 'Rauchschlot-Klamm', zone: 'outskirts', x: 190, y: 220, food: 20 },
+  { key: 'o4', name: 'Glutfeld', zone: 'outskirts', x: 75, y: 345, food: 35 },
+  { key: 'o5', name: 'Basaltwacht', zone: 'outskirts', x: 300, y: 320, food: 25 },
+  { key: 'o6', name: 'Schlackenhang', zone: 'outskirts', x: 185, y: 460, food: 20 },
+  { key: 'o7', name: 'Verbrannte Senke', zone: 'outskirts', x: 85, y: 575, food: 30 },
+  { key: 'o8', name: 'Eisenkamm-Feste', zone: 'outskirts', x: 315, y: 560, food: 25 },
   // Gnaw's Edge
-  { key: 'g1', name: 'Wutzorn-Hügel', zone: 'gnaw', x: 455, y: 150 },
-  { key: 'g2', name: 'Castbridge', zone: 'gnaw', x: 470, y: 330 },
-  { key: 'g3', name: 'Burningbridge', zone: 'gnaw', x: 460, y: 505 },
-  { key: 'g4', name: 'Rand des Gnaw', zone: 'gnaw', x: 590, y: 240 },
+  { key: 'g1', name: 'Wutzorn-Hügel', zone: 'gnaw', x: 455, y: 150, food: 20 },
+  { key: 'g2', name: 'Castbridge', zone: 'gnaw', x: 470, y: 330, food: 25 },
+  { key: 'g3', name: 'Burningbridge', zone: 'gnaw', x: 460, y: 505, food: 25 },
+  { key: 'g4', name: 'Rand des Gnaw', zone: 'gnaw', x: 590, y: 240, food: 15 },
   // Hateful Shores
-  { key: 'h1', name: 'Brazenskull', zone: 'shores', x: 705, y: 125 },
-  { key: 'h2', name: 'Meereshöhle', zone: 'shores', x: 720, y: 320 },
-  { key: 'h3', name: 'Bröckelküste', zone: 'shores', x: 680, y: 505 },
-  { key: 'h4', name: 'Giftstrand', zone: 'shores', x: 830, y: 450 },
+  { key: 'h1', name: 'Brazenskull', zone: 'shores', x: 705, y: 125, food: 30 },
+  { key: 'h2', name: 'Meereshöhle', zone: 'shores', x: 720, y: 320, food: 45 },
+  { key: 'h3', name: 'Bröckelküste', zone: 'shores', x: 680, y: 505, food: 40 },
+  { key: 'h4', name: 'Giftstrand', zone: 'shores', x: 830, y: 450, food: 35 },
   // Hel's Claw
-  { key: 'c1', name: "Hel's Claw", zone: 'claw', x: 905, y: 255 },
+  { key: 'c1', name: "Hel's Claw", zone: 'claw', x: 905, y: 255, food: 10 },
 ];
 const RC_LINKS = [
   ['o1', 'o2'], ['o1', 'o3'], ['o2', 'o3'], ['o2', 'g1'], ['o3', 'o4'], ['o3', 'o5'], ['o4', 'o5'], ['o4', 'o6'],
@@ -35,18 +35,18 @@ const RC_LINKS = [
 ].map(([a, b]) => ({ from: a, to: b, type: 'road', both: true }));
 
 const BW_NODES = [
-  { key: 'tb', name: "Thyria's Bounty", zone: 'bw', x: 330, y: 70 },
-  { key: 'ff', name: 'Forest Fortress', zone: 'bw', x: 670, y: 70 },
-  { key: 'dm', name: 'A Dense and Choking Maze', zone: 'bw', x: 165, y: 180 },
-  { key: 'ck', name: 'Cursed Kernel', zone: 'bw', x: 500, y: 180 },
-  { key: 'ew', name: 'Escort to the Wellspring Grove', zone: 'bw', x: 835, y: 180 },
-  { key: 'nc', name: 'Nexuses of Contamination', zone: 'bw', x: 240, y: 295 },
-  { key: 'pc', name: 'Precarious Crossing', zone: 'bw', x: 760, y: 295 },
-  { key: 'ef', name: 'Emergency Foraging', zone: 'bw', x: 215, y: 405 },
-  { key: 'cs', name: 'The Call of Sacrifice', zone: 'bw', x: 785, y: 405 },
-  { key: 'va', name: 'Vital Alignment', zone: 'bw', x: 225, y: 515 },
-  { key: 'cr', name: 'Creeping Rootstalks', zone: 'bw', x: 775, y: 515 },
-  { key: 'bp', name: 'Be It Purity or Putrescence', zone: 'bw', x: 500, y: 600 },
+  { key: 'tb', name: "Thyria's Bounty", zone: 'bw', x: 330, y: 70, food: 40 },
+  { key: 'ff', name: 'Forest Fortress', zone: 'bw', x: 670, y: 70, food: 30 },
+  { key: 'dm', name: 'A Dense and Choking Maze', zone: 'bw', x: 165, y: 180, food: 20 },
+  { key: 'ck', name: 'Cursed Kernel', zone: 'bw', x: 500, y: 180, food: 15 },
+  { key: 'ew', name: 'Escort to the Wellspring Grove', zone: 'bw', x: 835, y: 180, food: 35 },
+  { key: 'nc', name: 'Nexuses of Contamination', zone: 'bw', x: 240, y: 295, food: 10 },
+  { key: 'pc', name: 'Precarious Crossing', zone: 'bw', x: 760, y: 295, food: 25 },
+  { key: 'ef', name: 'Emergency Foraging', zone: 'bw', x: 215, y: 405, food: 40 },
+  { key: 'cs', name: 'The Call of Sacrifice', zone: 'bw', x: 785, y: 405, food: 20 },
+  { key: 'va', name: 'Vital Alignment', zone: 'bw', x: 225, y: 515, food: 30 },
+  { key: 'cr', name: 'Creeping Rootstalks', zone: 'bw', x: 775, y: 515, food: 35 },
+  { key: 'bp', name: 'Be It Purity or Putrescence', zone: 'bw', x: 500, y: 600, food: 10 },
 ];
 // type: 'path' = Thyrian Path (nach Kampf entdeckt), 'trail' = Concealed Trail (nach Sieg entdeckt)
 const BW_LINKS = [
@@ -98,6 +98,13 @@ export const PACKS = {
 };
 
 export function packOf(id) { return PACKS[id] || PACKS.rc; }
+
+// Anteil (%) des Nahrungsbedarfs, den ein Feld passiv deckt. Lager (noch kein Feld) = 25 %.
+export const CAMP_FOOD = 25;
+export function foodFactor(packId, key) {
+  const n = key ? packOf(packId).nodes.find(x => x.key === key) : null;
+  return n && n.food != null ? n.food : CAMP_FOOD;
+}
 
 // Welche Felder darf ein Spieler betreten? player: {location_key, shards_total, data:{won:[], unlocked:[]}}
 export function allowedTargets(pack, player) {

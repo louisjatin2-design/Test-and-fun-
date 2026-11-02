@@ -309,6 +309,7 @@ async function rosterOps(env, ctx, body) {
   const stmts = [];
   let vault = pl.vault, vaultTotal = pl.vault_total;
   const created = [];
+  const unitData = {};
   for (const op of ops) {
     if (op.op === 'add') {
       const u = cleanUnitFields(op.unit || {});
@@ -323,7 +324,18 @@ async function rosterOps(env, ctx, body) {
       const f = cleanUnitFields(op.fields || {});
       const keys = Object.keys(f);
       if (keys.length) stmts.push(env.DB.prepare(`UPDATE roster_units SET ${keys.map(k => k + '=?').join(', ')} WHERE id=? AND player_id=?`).bind(...keys.map(k => f[k]), str(op.id, 40), pid));
-      if (op.data) stmts.push(env.DB.prepare('UPDATE roster_units SET data=? WHERE id=? AND player_id=?').bind(JSON.stringify(op.data), str(op.id, 40), pid));
+      if (op.data && typeof op.data === 'object') {
+        // Nur die geänderten Felder übernehmen (null = Feld löschen), damit ein veralteter Stand nichts überschreibt
+        const uid = str(op.id, 40);
+        if (!(uid in unitData)) {
+          const row = await env.DB.prepare('SELECT data FROM roster_units WHERE id=? AND player_id=?').bind(uid, pid).first();
+          unitData[uid] = row ? parse(row.data) : {};
+        }
+        const merged = { ...unitData[uid] };
+        for (const [k, v] of Object.entries(op.data)) { if (v === null) delete merged[k]; else merged[k] = v; }
+        unitData[uid] = merged;
+        stmts.push(env.DB.prepare('UPDATE roster_units SET data=? WHERE id=? AND player_id=?').bind(JSON.stringify(merged), uid, pid));
+      }
     } else if (op.op === 'remove') {
       stmts.push(env.DB.prepare('DELETE FROM roster_units WHERE id=? AND player_id=?').bind(str(op.id, 40), pid));
       stmts.push(env.DB.prepare('UPDATE roster_units SET regiment_of=NULL, auxiliary=1 WHERE regiment_of=? AND player_id=?').bind(str(op.id, 40), pid));
@@ -337,6 +349,19 @@ async function rosterOps(env, ctx, body) {
       if ('roster_locked' in f) {
         if (!f.roster_locked && pl.roster_locked && !ctx.admin) fail(403, 'Nur der Master kann ein abgeschlossenes Roster wieder öffnen');
         stmts.push(env.DB.prepare('UPDATE players SET roster_locked=? WHERE id=?').bind(f.roster_locked ? 1 : 0, pid));
+      }
+      if (f.data_delta && typeof f.data_delta === 'object') {
+        // Zahlen-Vorräte (Nahrung, Gold) sicher hoch-/runterzählen
+        const cur = parse(pl.data);
+        for (const [k, v] of Object.entries(f.data_delta)) {
+          if (!['food', 'gold', 'food_total', 'gold_total'].includes(k)) continue;
+          const start = (k === 'food' || k === 'food_total') && cur[k] == null ? c.points_limit : 0;
+          const nv = (cur[k] == null ? start : Number(cur[k]) || 0) + clampInt(v, -1000000, 1000000, 0);
+          if (nv < 0) fail(400, k === 'food' ? `Nicht genug Nahrung (es fehlen ${-nv}).` : `Nicht genug Gold (es fehlen ${-nv}).`);
+          cur[k] = nv;
+        }
+        pl.data = JSON.stringify(cur);
+        stmts.push(env.DB.prepare('UPDATE players SET data=? WHERE id=?').bind(pl.data, pid));
       }
       if (f.data && typeof f.data === 'object') {
         const merged = { ...parse(pl.data), ...f.data };
@@ -431,7 +456,7 @@ export async function handle(context) {
         if (dupe) fail(409, 'Dieser Name ist in der Kampagne schon vergeben.');
         const id = rid(), salt = rid(16);
         const p = packOf(c.pack);
-        const data = p.id === 'bw' ? { unlocked: [...p.startUnlocked] } : {};
+        const data = { ...(p.id === 'bw' ? { unlocked: [...p.startUnlocked] } : {}), food: c.points_limit, food_total: c.points_limit, gold: 0, gold_total: 0 };
         let loc = null;
         if (p.id === 'rc' && c.phase !== 'lobby') loc = p.starts[(slot - 1) % p.starts.length];
         await env.DB.batch([

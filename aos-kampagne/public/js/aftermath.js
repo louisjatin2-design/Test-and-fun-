@@ -1,7 +1,7 @@
 // Aftermath-Assistent (Ravaged Coast & Blighted Wilds)
 import { h, toast, modal, confirmBox, select, field, badge, diceInput, rollExpr, rollDie, rich } from './ui.js';
-import { S, me, pack, playerById, unitsOf, unitPoints, generalOf, colorOf, api, loadState, rosterOps, logDice, allianceOf } from './store.js';
-import { RANKS } from './packs.js';
+import { S, me, pack, playerById, unitsOf, unitPoints, generalOf, colorOf, api, loadState, rosterOps, logDice, allianceOf, unitStatus, unitJob, JOBS, livePoints, perModel, fullModels, aliveModels, plays } from './store.js';
+import { RANKS, foodFactor } from './packs.js';
 import { RC, BW, pathsFor, pathById, scarLevelFor, scarTable, rollOnRange, SCAR_LEVELS, forgeApply, weaponText } from './rules.js';
 import { pickUnit, editUnit } from './roster.js';
 import { resultText } from './match.js';
@@ -26,9 +26,10 @@ export function renderAftermath(idWithQuery) {
   ctx = { m, side, pid, state, done };
   const p = pack();
   const steps = p.id === 'bw'
-    ? [['Ruhmespunkte', bwStep1], ['Ruhm & Ränge', bwStep2], ['Roster verwalten', bwStep3], ['Wunden & Narben', step4]]
-    : [['Splitter gewinnen', rcStep1], ['Roster verwalten', step2], ['Splitter ausgeben', rcStep3], ['Wunden & Narben', step4]];
-  const cur = Math.min(Math.max(1, state.step || 1), 4);
+    ? [['Ruhmespunkte', bwStep1], ['Ruhm & Ränge', bwStep2], ['Roster verwalten', bwStep3], ['Wunden & Verluste', step4], ['Versorgung', step5]]
+    : [['Splitter gewinnen', rcStep1], ['Roster verwalten', step2], ['Splitter ausgeben', rcStep3], ['Wunden & Verluste', step4], ['Versorgung', step5]];
+  const LAST = steps.length;
+  const cur = Math.min(Math.max(1, state.step || 1), LAST);
   const stepper = h('ol.stepper', steps.map(([t], i) => h('li' + (i + 1 === cur ? '.active' : i + 1 < cur ? '.done' : ''), { onClick: () => goStep(i + 1) }, h('span', i + 1), t)));
   const pl = playerById(pid);
   const body = done ? h('div.card', h('p', badge('Aftermath abgeschlossen', 'ok')), h('p.muted', 'Änderungen am Roster gehen weiterhin über „Armee → Bearbeiten“.')) : steps[cur - 1][1]();
@@ -37,12 +38,13 @@ export function renderAftermath(idWithQuery) {
     h('div.card.aft-head',
       h('h2', '🔥 Aftermath'),
       h('p', h('span.dot', { style: { background: colorOf(pid) } }), h('strong', pl.name), ` · ${resultText(m)} · ${m.battleplan || ''}`),
-      h('p.vault-line', `${p.currency.icon} Im Vorrat: `, h('strong', pl.vault + ' ' + p.currency.short), ` · insgesamt gesammelt: ${pl.vault_total}`)),
+      h('p.vault-line', `${p.currency.icon} Im Vorrat: `, h('strong', pl.vault + ' ' + p.currency.short), ` · insgesamt gesammelt: ${pl.vault_total}`,
+        ` · 🍖 Nahrung: `, h('strong', String(pl.data.food ?? S().campaign.points_limit)), p.id === 'rc' ? [` · 🪙 Gold: `, h('strong', String(pl.data.gold || 0))] : null)),
     done ? null : stepper,
     body,
     done ? null : h('div.row.between',
       cur > 1 ? h('button.btn.ghost', { onClick: () => goStep(cur - 1) }, '← Zurück') : h('span'),
-      cur < 4 ? h('button.btn', { onClick: () => goStep(cur + 1) }, 'Weiter →')
+      cur < LAST ? h('button.btn', { onClick: () => goStep(cur + 1) }, 'Weiter →')
         : h('button.btn.good.big', { onClick: finish }, '✓ Aftermath abschließen')));
 }
 
@@ -53,13 +55,20 @@ async function saveState(done = false) {
 async function goStep(n) { ctx.state.step = n; await saveState(); redraw(); }
 const redraw = () => window.__redraw && window.__redraw();
 async function finish() {
-  const s4 = ctx.state.s4 || {};
+  const s4 = ctx.state.s4 || {}, s5 = ctx.state.s5 || {};
   if (!s4.wounds_applied && !(await confirmBox('Die Kampfwunden wurden noch nicht angewendet. Trotzdem abschließen?', 'Abschließen'))) return;
+  if (!s5.fed && !(await confirmBox('Die Versorgung (Nahrung) wurde noch nicht abgerechnet. Trotzdem abschließen?', 'Abschließen'))) return;
   await saveState(true); toast('Aftermath abgeschlossen!', 'ok'); location.hash = '#/c/lage';
 }
 const myUnits = () => unitsOf(ctx.pid);
 const rep = () => ctx.m.report || { units: {} };
-const repU = id => (rep().units || {})[id] || { status: 'field' };
+const repU = id => {
+  const r = (rep().units || {})[id] || {};
+  const u = S().units.find(x => x.id === id);
+  return { ...r, status: u ? unitStatus(ctx.m, u) : (r.status || 'field') };
+};
+// Gestorbene Modelle dieser Schlacht (vor dem Dauerhaft-Wurf)
+const casualties = u => { const r = repU(u.id); if (!plays(r.status) && r.status !== 'field') return 0; if (r.untimely) return 0; return r.destroyed ? (r.alive_at_battle ?? aliveModels(u)) : (r.lost || 0); };
 const won = () => ctx.m.result && ctx.m.result.startsWith(ctx.side);
 const lost = () => ctx.m.result && ctx.m.result !== 'draw' && ctx.m.result !== 'void' && !ctx.m.result.startsWith(ctx.side);
 const isMajor = () => ctx.m.result === 'a' || ctx.m.result === 'b';
@@ -129,7 +138,7 @@ function rcStep3() {
         weapons.map(u => (s.unstable || {})[u.id] ? h('p', `${u.name}: `, (s.unstable[u.id] === 1 ? '💥 zerbrochen (1 Kampfwunde)' : `hält (${s.unstable[u.id]})`))
           : h('p', h('strong', u.name + ': '), diceInput('D6', async v => {
             s.unstable = { ...(s.unstable || {}), [u.id]: v };
-            if (v === 1) await ops([{ op: 'update', id: u.id, fields: { battle_wounds: u.battle_wounds + 1 }, data: { ...u.data, weapon: undefined } }], `${u.name}: Emberstone-Waffe zerbricht (1 Kampfwunde).`);
+            if (v === 1) await ops([{ op: 'update', id: u.id, fields: { battle_wounds: u.battle_wounds + 1 }, data: { weapon: null } }], `${u.name}: Emberstone-Waffe zerbricht (1 Kampfwunde).`);
             await saveState(); redraw();
           }))))
         : h('p.muted.small', 'Keine bestehenden Emberstone-Waffen.')));
@@ -158,7 +167,7 @@ function pathAction(markUsed) {
         if (!pickedAbility) return toast('Bitte eine Fähigkeit wählen.', 'error');
         const pathId = u.path || pathSel.value;
         const abilities = [...(u.data.abilities || [])]; abilities[next - 1] = pickedAbility;
-        await ops([{ op: 'player', fields: { vault_delta: -cost } }, { op: 'update', id: u.id, fields: { rank: next, path: pathId }, data: { ...u.data, abilities } }],
+        await ops([{ op: 'player', fields: { vault_delta: -cost } }, { op: 'update', id: u.id, fields: { rank: next, path: pathId }, data: { abilities } }],
           `${u.name} erreicht ${RANKS[next]} (${pathById(pathId)?.de || pathId}: ${pickedAbility}) für ${cost} Splitter.`);
         mm.close(); markUsed('path', `${u.name} → ${RANKS[next]}`);
       } }, `Kaufen (${cost})`));
@@ -187,7 +196,7 @@ function enhancementAction(cost, markUsed, free) {
       if (u.data[type.value] || (type.value === 'artefact' && u.data.weapon)) return toast(`${u.name} hat schon eine Verbesserung dieser Art.`, 'error');
       const all = myUnits().flatMap(x => [x.data.trait, x.data.artefact]);
       if (all.includes(nm.value)) return toast('Diese Verbesserung ist schon im Roster.', 'error');
-      const list = [{ op: 'update', id: u.id, data: { ...u.data, [type.value]: nm.value } }];
+      const list = [{ op: 'update', id: u.id, data: { [type.value]: nm.value } }];
       if (cost) list.unshift({ op: 'player', fields: { vault_delta: -cost } });
       await ops(list, `${u.name} erhält ${nm.value}${cost ? ` (−${cost} ${cur()})` : ' (Belohnung)'}.`);
       mm.close(); markUsed && markUsed('enh', `${u.name}: ${nm.value}`);
@@ -285,7 +294,7 @@ function forgeAction(markUsed) {
     h('button.btn.good', { onClick: async () => {
       const u = heroes.find(x => x.id === hSel.value);
       weapon.name = name.value || (weapon.type === 'ranged' ? 'Emberstone-Fernkampfwaffe' : 'Emberstone-Nahkampfwaffe');
-      await ops([{ op: 'update', id: u.id, data: { ...u.data, weapon } }], `${u.name} erhält ${weapon.name}: ${weaponText(weapon)}.`);
+      await ops([{ op: 'update', id: u.id, data: { weapon } }], `${u.name} erhält ${weapon.name}: ${weaponText(weapon)}.`);
       ctx.state.s3.forged = [...(ctx.state.s3.forged || []), u.id];
       mm.close(); markUsed('weapon', `${weapon.name} für ${u.name}`);
     } }, 'Waffe übergeben'));
@@ -375,7 +384,7 @@ function commonManageActions(note, bw) {
           const u = c.find(x => x.id === sel.value); const nr = u.rank - 1;
           const fields = { path: nr > 0 ? pSel.value : null, rank: nr };
           if (bw) fields.renown = BW.rankMin[nr];
-          await ops([{ op: 'update', id: u.id, fields, data: { ...u.data, abilities: [] } }], `${u.name} wechselt auf ${pathById(pSel.value)?.de} (Rang ${RANKS[nr]}).`);
+          await ops([{ op: 'update', id: u.id, fields, data: { abilities: [] } }], `${u.name} wechselt auf ${pathById(pSel.value)?.de} (Rang ${RANKS[nr]}).`);
           mm.close(); await note(`${u.name}: neuer Pfad`);
           if (nr > 0) { const fresh = myUnits().find(x => x.id === u.id); if (fresh) editUnit(fresh); toast('Jetzt die Fähigkeiten für jeden Rang wählen.', 'info'); }
         } }, 'Wechseln')));
@@ -388,7 +397,7 @@ function oppPoints() {
   const m = ctx.m, r = rep();
   const other = ctx.side === 'a' ? m.player_b : m.player_a;
   if (!other) return Number(r.guest_points) || 0;
-  return unitsOf(other).filter(u => ((r.units || {})[u.id]?.status || 'field') !== 'rest').reduce((a, u) => a + unitPoints(u), 0);
+  return unitsOf(other).filter(u => unitStatus(m, u) !== 'rest').reduce((a, u) => a + unitPoints(u), 0);
 }
 
 function bwStep1() {
@@ -465,7 +474,7 @@ function removeScarModal(done) {
   const mm = modal('Narbe entfernen', h('div', field('Narbe', sel), h('button.btn', { onClick: async () => {
     const [uid, k] = sel.value.split('|'); const u = us.find(x => x.id === uid);
     const scars = { ...u.data.scars }; delete scars[k];
-    await ops([{ op: 'update', id: u.id, data: { ...u.data, scars } }], `${u.name}: Narbe entfernt.`);
+    await ops([{ op: 'update', id: u.id, data: { scars } }], `${u.name}: Narbe entfernt.`);
     mm.close(); done(`Narbe bei ${u.name} entfernt`);
   } }, 'Entfernen')));
 }
@@ -560,7 +569,7 @@ function bwStep3() {
     const mm = modal('Trank mischen', h('div', field('Trank', cSel), field('Held', hSel), h('button.btn', { onClick: async () => {
       const c = BW.concoctions.find(x => x.name === cSel.value), u = heroes.find(x => x.id === hSel.value);
       const next = { ...ingr }; Object.entries(c.recipe).forEach(([k, n]) => { next[k] -= n; });
-      await ops([{ op: 'player', fields: { data: { ingredients: next } } }, { op: 'update', id: u.id, data: { ...u.data, concoction: c.name, concoction_bought: false } }], `mischt ${c.name} für ${u.name}.`);
+      await ops([{ op: 'player', fields: { data: { ingredients: next } } }, { op: 'update', id: u.id, data: { concoction: c.name, concoction_bought: false } }], `mischt ${c.name} für ${u.name}.`);
       mm.close(); note(`${c.name} gemischt`);
     } }, 'Mischen')));
   };
@@ -569,7 +578,7 @@ function bwStep3() {
     const hSel = select(heroes.map(u => [u.id, u.name]), heroes[0]?.id);
     const mm = modal('Trank kaufen (30 GP)', h('div', field('Trank', cSel), field('Held', hSel), h('p.small.muted', 'Gekaufte Tränke lösen beim Einsatz einen Wurf auf der Nebenwirkungs-Tabelle aus.'), h('button.btn', { onClick: async () => {
       const u = heroes.find(x => x.id === hSel.value);
-      await ops([{ op: 'player', fields: { vault_delta: -30 } }, { op: 'update', id: u.id, data: { ...u.data, concoction: cSel.value, concoction_bought: true } }], `kauft ${cSel.value} für ${u.name} (−30 GP).`);
+      await ops([{ op: 'player', fields: { vault_delta: -30 } }, { op: 'update', id: u.id, data: { concoction: cSel.value, concoction_bought: true } }], `kauft ${cSel.value} für ${u.name} (−30 GP).`);
       mm.close(); note(`${cSel.value} gekauft`);
     } }, 'Kaufen (30)')));
   };
@@ -608,23 +617,40 @@ function bwStep3() {
 // ===================== Wunden & Narben (beide) =====================
 function step4() {
   const p = pack(), s = ctx.state.s4;
-  s.w = s.w || {}; s.tok = s.tok || {}; s.smoul = s.smoul || {}; s.rest = s.rest || {};
+  s.w = s.w || {}; s.tok = s.tok || {}; s.smoul = s.smoul || {}; s.rest = s.rest || {}; s.perm = s.perm || {}; s.permDice = s.permDice || {};
   const us = myUnits();
+  const fallen = us.filter(u => casualties(u) > 0);
   const destroyed = us.filter(u => repU(u.id).destroyed && !repU(u.id).untimely);
   const tokenUnits = p.id === 'rc' ? us.filter(u => repU(u.id).token) : [];
   const contaminated = p.id === 'bw' ? us.filter(u => repU(u.id).contaminated) : [];
-  const resting = p.id === 'bw' ? us.filter(u => repU(u.id).status === 'rest') : [];
+  const resting = us.filter(u => repU(u.id).status === 'rest');
   const smoulder = p.id === 'rc' ? us.filter(u => /Smouldering/.test((u.data.scars || {}).serious || '')) : [];
   const save = () => saveState();
   const sections = [];
   if (resting.length) sections.push(h('div', h('h4', 'Ruhende Einheiten heilen W6'), resting.map(u => h('p', h('strong', u.name + ': '), s.wounds_applied ? `−${s.rest[u.id]}` : diceInput('D6', v => { s.rest[u.id] = v; save(); }, { value: s.rest[u.id] })))));
+  sections.push(h('div', h('h4', 'Gestorbene Modelle: je W6 – bei 1 dauerhaft tot'),
+    h('p.tiny.muted', 'Bei 2+ kehrt das Modell zurück. Dauerhaft tote Modelle holt nur „Erholen“ zurück (Hausregel).'),
+    fallen.length ? fallen.map(u => {
+      const n = casualties(u);
+      if (s.wounds_applied) return h('p', h('strong', u.name + ': '), `${n} gestorben → ${s.perm[u.id] || 0} dauerhaft tot`);
+      const manual = h('input.tiny-in', { type: 'number', min: 0, max: n, placeholder: 'Einsen', value: s.perm[u.id] ?? '' });
+      manual.addEventListener('change', () => { s.perm[u.id] = Math.min(n, Math.max(0, Number(manual.value) || 0)); s.permDice[u.id] = null; save().then(redraw); });
+      return h('p', h('strong', u.name + ': '), `${n} Modell${n > 1 ? 'e' : ''} gestorben `,
+        h('button.btn.small.dice-btn', { onClick: async () => {
+          const dice = Array.from({ length: n }, () => rollDie(6));
+          s.permDice[u.id] = dice; s.perm[u.id] = dice.filter(d => d === 1).length;
+          logDice(`${u.name}: ${n}×W6 für gestorbene Modelle → ${dice.join(', ')} (${s.perm[u.id]} dauerhaft tot)`);
+          await save(); redraw();
+        } }, `🎲 ${n}×W6`), h('span.dice-or', ' oder Anzahl Einsen: '), manual,
+        s.perm[u.id] != null ? h('strong', ` → ${s.perm[u.id]} dauerhaft tot${s.permDice[u.id] ? ' (' + s.permDice[u.id].join(', ') + ')' : ''}`) : null);
+    }) : h('p.muted.small', 'Keine Verluste.')));
   sections.push(h('div', h('h4', 'Vernichtete Einheiten: je W3'), destroyed.length ? destroyed.map(u => h('p', h('strong', u.name + ': '), s.wounds_applied ? `+${s.w[u.id]}` : diceInput('D3', v => { s.w[u.id] = v; save(); }, { value: s.w[u.id] }))) : h('p.muted.small', 'Keine.')));
   if (p.id === 'rc') sections.push(h('div', h('h4', 'Emberstone-Marke am Ende: W6, bei 1–4 eine Kampfwunde'), tokenUnits.length ? tokenUnits.map(u => h('p', h('strong', u.name + ': '), s.wounds_applied ? (s.tok[u.id] <= 4 ? '+1' : 'verschont') : diceInput('D6', v => { s.tok[u.id] = v; save(); }, { value: s.tok[u.id] }))) : h('p.muted.small', 'Keine.')));
   if (p.id === 'bw') sections.push(h('div', h('h4', 'In 3" eines verseuchten Geländes: +1'), contaminated.length ? h('p', contaminated.map(u => u.name).join(', ')) : h('p.muted.small', 'Keine.')));
   if (smoulder.length) sections.push(h('div', h('h4', 'Smouldering Scars: W6, bei 5+ W3 Kampfwunden'), smoulder.map(u => h('p', h('strong', u.name + ': '), s.wounds_applied ? (s.smoul[u.id] ? `+${s.smoul[u.id]}` : '–') : diceInput('D6', async v => { if (v >= 5) { const r = rollDie(3); s.smoul[u.id] = r; toast(`${u.name}: ${r} Kampfwunden`, 'info'); logDice(`${u.name} (Smouldering Scars): ${v} → ${r} Kampfwunden`); } else s.smoul[u.id] = 0; save(); })))));
 
   const apply = async () => {
-    if (destroyed.some(u => s.w[u.id] == null) || tokenUnits.some(u => s.tok[u.id] == null) || resting.some(u => s.rest[u.id] == null)) return toast('Bitte zuerst alle Würfe machen.', 'error');
+    if (destroyed.some(u => s.w[u.id] == null) || tokenUnits.some(u => s.tok[u.id] == null) || resting.some(u => s.rest[u.id] == null) || fallen.some(u => s.perm[u.id] == null)) return toast('Bitte zuerst alle Würfe machen.', 'error');
     const list = [];
     const before = {};
     for (const u of us) {
@@ -635,9 +661,12 @@ function step4() {
       if (s.tok[u.id] != null && s.tok[u.id] <= 4) w += 1;
       if (repU(u.id).contaminated && p.id === 'bw') w += 1;
       if (s.smoul[u.id]) w += s.smoul[u.id];
-      list.push({ op: 'update', id: u.id, fields: { battle_wounds: w, drained: 0 } });
+      const op = { op: 'update', id: u.id, fields: { battle_wounds: w, drained: 0 } };
+      if (s.perm[u.id]) op.data = { lost: Math.min(fullModels(u), (u.data.lost || 0) + s.perm[u.id]) };
+      list.push(op);
     }
-    await ops(list, 'Kampfwunden bestimmt.');
+    const permTxt = fallen.filter(u => s.perm[u.id]).map(u => `${u.name} −${s.perm[u.id]}`).join(', ');
+    await ops(list, 'Kampfwunden bestimmt.' + (permTxt ? ' Dauerhaft tote Modelle: ' + permTxt + '.' : ''));
     s.wounds_applied = true; s.before = before; await saveState(); redraw();
   };
 
@@ -653,7 +682,7 @@ function step4() {
       diceInput('D6', async v => {
         const row = rollOnRange(scarTable(p.id)[lvl], v);
         const text = `${row[1]} – ${row[2]}`;
-        await ops([{ op: 'update', id: u.id, data: { ...u.data, scars: { ...(u.data.scars || {}), [lvl]: text } } }], `${u.name} erhält eine Narbe (${label}): ${row[1]}.`);
+        await ops([{ op: 'update', id: u.id, data: { scars: { ...(u.data.scars || {}), [lvl]: text } } }], `${u.name} erhält eine Narbe (${label}): ${row[1]}.`);
         redraw();
       }));
   }).filter(Boolean) : [];
@@ -685,12 +714,126 @@ function step4() {
     h('p.tiny.muted', p.id === 'bw' ? 'Erschöpft: kein „Purify the Land“, kein Ziel von „Boon of Vitality“.' : 'Erschöpft: −1 auf Zauber-, Gebets- und Trefferwürfe.')) : null;
 
   return h('div.card',
-    h('h3', '4. Kampfwunden & Narben'),
+    h('h3', '4. Kampfwunden, Verluste & Narben'),
     sections,
     s.wounds_applied ? doneBox('Kampfwunden angewendet. Erschöpfung aus der letzten Schlacht ist aufgehoben.') : h('button.btn', { onClick: apply }, 'Kampfwunden anwenden'),
     s.wounds_applied ? h('h4', 'Narben') : null,
     s.wounds_applied ? (scarRows.length ? scarRows : h('p.muted.small', 'Keine neuen Narben.')) : null,
     ritualBox);
+}
+
+// ===================== Versorgung (Hausregeln, beide) =====================
+function step5() {
+  const p = pack(), s = ctx.state.s5 = ctx.state.s5 || {}, m = ctx.m;
+  s.jobs = s.jobs || {}; s.feed = s.feed || {};
+  const me_ = pl(), us = myUnits();
+  const save = () => saveState();
+  const jobUnits = us.filter(u => unitJob(u, m.round) !== 'fight');
+  const payName = p.id === 'rc' ? 'Gold' : 'GP';
+  const jobRows = jobUnits.map(u => {
+    const job = unitJob(u, m.round), J = JOBS[job];
+    const done = s.jobs[u.id];
+    const head = h('strong', `${J.icon} ${u.name} – ${J.label}: `);
+    if (done) return h('p', head, done);
+    if (job === 'mine') {
+      const expr = p.id === 'rc' ? 'D3' : 'D6';
+      return h('p', head, diceInput(expr, async v => {
+        const gain = p.id === 'rc' ? v : v * 10;
+        await ops([{ op: 'player', fields: { vault_delta: gain, vault_total_delta: gain } }], `${u.name} schürft ${gain} ${p.currency.short}.`);
+        s.jobs[u.id] = `+${gain} ${p.currency.short}`; await save(); redraw();
+      }), p.id === 'bw' ? h('span.tiny.muted', ' × 10 GP') : null);
+    }
+    if (job === 'forage') {
+      return h('p', head, diceInput('D6', async v => {
+        const gain = Math.round(livePoints(u) * v * 0.2);
+        const list = [{ op: 'player', fields: { data_delta: { food: gain, food_total: gain } } }];
+        if (v === 1) list.push({ op: 'update', id: u.id, fields: { battle_wounds: u.battle_wounds + 1 } });
+        await ops(list, `${u.name} sammelt ${gain} Nahrung${v === 1 ? ' – Unfall: 1 Kampfwunde' : ''}.`);
+        s.jobs[u.id] = `+${gain} Nahrung${v === 1 ? ' (Unfall: 1 Kampfwunde)' : ''}`; await save(); redraw();
+      }), h('span.tiny.muted', ` × ${livePoints(u)} Pkt × 20 %`));
+    }
+    // Erholen: dauerhaft tote Modelle zurückholen
+    const lostN = u.data.lost || 0;
+    if (!lostN) return h('p', head, 'keine dauerhaft toten Modelle – heilt W6 Kampfwunden (Schritt 4). ', h('button.btn.tiny.ghost', { onClick: async () => { s.jobs[u.id] = 'nichts zurückzuholen'; await save(); redraw(); } }, 'OK'));
+    const pm = perModel(u);
+    const n = h('input.tiny-in', { type: 'number', min: 0, max: lostN, value: lostN });
+    const costTxt = h('span.cost', `${lostN * pm} ${payName}`);
+    n.addEventListener('input', () => { costTxt.textContent = `${(Number(n.value) || 0) * pm} ${payName}`; });
+    return h('div.scar-row', head, `${lostN} Modell${lostN > 1 ? 'e' : ''} dauerhaft tot · ${pm} Pkt pro Modell. Zurückholen: `, n, ' Kosten: ', costTxt, ' ',
+      h('button.btn.small', { onClick: async () => {
+        const k = Math.min(lostN, Math.max(0, Number(n.value) || 0));
+        if (!k) { s.jobs[u.id] = 'keine Modelle zurückgeholt'; await save(); return redraw(); }
+        const cost = k * pm;
+        const pay = p.id === 'rc' ? { op: 'player', fields: { data_delta: { gold: -cost } } } : { op: 'player', fields: { vault_delta: -cost } };
+        const dice = Array.from({ length: k }, () => rollDie(6));
+        const back = dice.filter(d => d > 1).length;
+        try {
+          await ops([pay, { op: 'update', id: u.id, data: { lost: lostN - back } }], `${u.name}: ${k} Modelle für ${cost} ${payName} – Würfe ${dice.join(', ')} → ${back} kehren zurück.`);
+        } catch { return; }
+        s.jobs[u.id] = `${k} bezahlt (${cost} ${payName}), Würfe ${dice.join(', ')} → ${back} zurück`; await save(); redraw();
+      } }, 'Bezahlen & würfeln'));
+  });
+
+  // Gold (nur Ravaged Coast) nach der GP-Tabelle
+  let goldBox = null;
+  if (p.id === 'rc') {
+    const opp = oppPoints(), b = BW.bracket(opp), t = BW.gpTable;
+    const g = generalOf(ctx.pid);
+    const gAlive = g && !repU(g.id).destroyed;
+    const major = won() && isMajor(), minor = won() && !isMajor();
+    const gold = t.fought[b] + (major ? t.major[b] : 0) + (minor ? t.minor[b] : 0) + (gAlive ? t.generalAlive[b] : 0);
+    goldBox = h('div', h('h4', '🪙 Gold'),
+      h('p.small', `Wie Ruhmespunkte: geschlagen ${t.fought[b]}${major ? ' + großer Sieg ' + t.major[b] : ''}${minor ? ' + kleiner Sieg ' + t.minor[b] : ''}${gAlive ? ' + General lebt ' + t.generalAlive[b] : ''} (Gegner ${opp} Pkt).`),
+      s.gold ? doneBox(`${s.gold} Gold erhalten.`) : h('button.btn.small', { onClick: async () => {
+        await ops([{ op: 'player', fields: { data_delta: { gold: gold, gold_total: gold } } }], `erhält ${gold} Gold.`);
+        s.gold = gold; await save(); redraw();
+      } }, `${gold} Gold gutschreiben`));
+  }
+
+  // Nahrung
+  const other = ctx.side === 'a' ? m.player_b : m.player_a;
+  const killed = other ? Number((m.report || {})['killed_pts_' + (ctx.side === 'a' ? 'b' : 'a')] || 0) : Number((m.report || {}).guest_killed_points || 0);
+  const factor = foodFactor(p.id, me_.location_key);
+  const costOf = u => Math.round(livePoints(u) * (100 - factor) / 100);
+  us.forEach(u => { if (s.feed[u.id] == null) s.feed[u.id] = true; });
+  const stock = me_.data.food ?? S().campaign.points_limit;
+  const income = s.loot ? 0 : killed;
+  const need = us.filter(u => s.feed[u.id]).reduce((x, u) => x + costOf(u), 0);
+  const avail = stock + income;
+  const short = need > avail;
+  const feedRows = us.filter(u => livePoints(u) > 0).map(u => h('label.check.feed-row',
+    h('input', { type: 'checkbox', checked: !!s.feed[u.id], disabled: !!s.fed, onChange: e => { s.feed[u.id] = e.target.checked; save().then(redraw); } }),
+    ` ${u.name} – ${costOf(u)} Nahrung`, u.data.hungry ? badge('hungert schon – ohne Futter verlässt sie die Armee!', 'warn') : null));
+  const feedBox = h('div',
+    h('h4', '🍖 Nahrung'),
+    h('table.table.small', h('tbody',
+      h('tr', h('td', 'Vorrat'), h('td', String(stock))),
+      h('tr', h('td', 'Beute: Punkte getöteter feindlicher Modelle'), h('td', s.loot ? `+${s.loot} (gutgeschrieben)` : '+' + killed)),
+      h('tr', h('td', `Feld „${me_.location_key ? (S().locations.find(l => l.key === me_.location_key) || {}).name : 'Lager'}“ deckt`), h('td', factor + ' %')),
+      h('tr.total', h('td', 'Bedarf der gefütterten Einheiten'), h('td', h('strong', String(need)))))),
+    s.fed ? doneBox(s.fed) : h('div',
+      h('p.small', 'Jede Einheit braucht pro Runde so viel Nahrung, wie ihre lebenden Modelle Punkte kosten (abzüglich des Feld-Anteils). Wer nicht gefüttert wird, hungert; hungert sie zwei Runden hintereinander, verlässt sie die Armee.'),
+      feedRows,
+      short ? h('p.problems', `⚠ Es fehlen ${need - avail} Nahrung – nimm Einheiten aus der Fütterung.`) : null,
+      h('button.btn', { disabled: short, onClick: async () => {
+        const list = [{ op: 'player', fields: { data_delta: { food: income - need, food_total: income } } }];
+        const gone = [], hungry = [];
+        for (const u of us) {
+          if (livePoints(u) <= 0) continue;
+          if (s.feed[u.id]) { if (u.data.hungry) list.push({ op: 'update', id: u.id, data: { hungry: false } }); continue; }
+          if (u.data.hungry) { list.push({ op: 'remove', id: u.id }); gone.push(u.name); }
+          else { list.push({ op: 'update', id: u.id, data: { hungry: true } }); hungry.push(u.name); }
+        }
+        const txt = `Versorgung: +${income} Beute, −${need} Verbrauch.` + (hungry.length ? ' Hungern: ' + hungry.join(', ') + '.' : '') + (gone.length ? ' Verlassen die Armee: ' + gone.join(', ') + '.' : '');
+        await ops(list, txt);
+        s.loot = income; s.fed = txt; await save(); redraw();
+      } }, 'Versorgung abrechnen')));
+
+  return h('div.card',
+    h('h3', '5. Versorgung & Aufträge'),
+    h('h4', 'Aufträge dieser Runde'),
+    jobRows.length ? jobRows : h('p.muted.small', 'Keine Einheit hatte einen Auftrag. Aufträge vergibst du zu Beginn jeder Runde unter „Lage“ oder „Armee“.'),
+    goldBox, feedBox);
 }
 
 async function succumb(u) {

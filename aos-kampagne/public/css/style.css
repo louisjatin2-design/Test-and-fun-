@@ -277,3 +277,10 @@ details > summary { cursor: pointer; }
   .map-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .map { min-width: 820px; }
 }
+.unit-btns { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+.feed-row { padding: 4px 0; border-bottom: 1px solid #ffffff0d; }
+.job-list { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
+.job-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.job-sel { width: auto; padding: 4px 8px; font-size: .85rem; }
+.vault.food { color: #f2cf73; } .vault.gold { color: #ffd27a; }
+@media (max-width: 720px) { .vault.food, .vault.gold { display: none; } }

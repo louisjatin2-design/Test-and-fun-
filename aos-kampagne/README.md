@@ -65,4 +65,5 @@ Neue Schlachtprofile-PDF herunterladen und `python3 tools/parse_bp.py <pdf> publ
 ## Hinweise
 
 - Regeltexte sind eigene, gekürzte Zusammenfassungen. Vollständige Texte: Wahapedia bzw. eure Bücher. Nur für den privaten Gebrauch.
+- **Hausregeln Aufträge & Versorgung:** Zu Beginn jeder Runde Einheiten zum Erholen, Schürfen oder Nahrungssammeln schicken (sie verpassen die Schlacht). Gestorbene Modelle: je W6, bei 1 dauerhaft tot; Erholen holt sie gegen Gold (Ravaged Coast) bzw. GP (Blighted Wilds) zurück (je Modell W6, bei 1 kein Erfolg). Nahrung: Start = Startpunkte, Beute = Punkte getöteter feindlicher Modelle, Bedarf = Punkte der lebenden Modelle minus Feld-Anteil; eine Einheit übersteht eine Hungerrunde, beim zweiten Mal verlässt sie die Armee.
 - Kampagnen-Hausregeln dieser App: geheime gleichzeitige Züge, Paarung Alleinstehender, Gastspieler bei ungerader Zahl, eroberte Felder ohne Bonus. In Blighted Wilds entdeckt ein Spieler die *Concealed Trails* eines Schlachtplans, sobald er mit ihm gewonnen hat.

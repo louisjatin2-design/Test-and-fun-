@@ -1,6 +1,6 @@
 // Armee / Path-to-Glory-Roster
 import { h, toast, modal, confirmBox, select, field, badge, rich, possessive } from './ui.js';
-import { S, me, pack, playerById, unitsOf, unitPoints, unitModels, rosterPoints, generalOf, colorOf, rosterOps, store, allianceOf, factionNames } from './store.js';
+import { S, me, pack, playerById, unitsOf, unitPoints, unitModels, rosterPoints, generalOf, colorOf, rosterOps, store, allianceOf, factionNames, nextJobRound, setJob, unitJob, JOBS, aliveModels, fullModels } from './store.js';
 import { RANKS, RANK_DE } from './packs.js';
 import { PATHS, pathById, pathsFor, RC, BW, weaponText, scarLevelFor } from './rules.js';
 
@@ -111,14 +111,17 @@ function unitCard(u, us, edit) {
   return h('div.unit' + (u.is_general ? '.general' : '') + (u.is_hero ? '.hero' : ''),
     h('div.unit-top',
       h('div', h('div.unit-name', u.is_general ? '👑 ' : u.is_hero ? '★ ' : '', u.name),
-        h('div.unit-sub', `${unitPoints(u)} Pkt · ${unitModels(u)} Modell${unitModels(u) > 1 ? 'e' : ''}${u.reinforced ? ' · verstärkt' : ''} · ${regimentLabel(u, us)}`)),
-      edit ? h('button.btn.tiny.ghost', { onClick: () => editUnit(u) }, 'Bearbeiten') : null),
+        h('div.unit-sub', `${unitPoints(u)} Pkt · ${aliveModels(u) < fullModels(u) ? aliveModels(u) + '/' : ''}${unitModels(u)} Modell${unitModels(u) > 1 ? 'e' : ''}${u.reinforced ? ' · verstärkt' : ''} · ${regimentLabel(u, us)}`)),
+      edit ? h('div.unit-btns',
+        h('button.btn.tiny.ghost', { onClick: () => editUnit(u) }, 'Bearbeiten'),
+        restToggle(u)) : null),
     h('div.badges',
       u.rank ? badge(RANKS[u.rank], 'rank r' + u.rank) : null,
       path ? badge(path.de) : u.path ? badge(u.path) : null,
       p.id === 'bw' ? badge(`Ruhm ${u.renown}`) : null,
       u.data.ror ? badge('Regiment of Renown', 'gold') : null,
       u.drained ? badge('erschöpft', 'warn') : null,
+      restBadge(u),
       u.data.legends ? badge('Legende') : null),
     abil.length ? h('ul.abil', abil.map((a, i) => a ? h('li', h('b', RANKS[i + 1] + ': '), a) : null)) : null,
     (u.data.trait || u.data.artefact || u.data.weapon || u.data.concoction) ? h('ul.enh',
@@ -135,6 +138,27 @@ function unitCard(u, us, edit) {
       scars.critical ? h('li', '🩸 Kritisch: ', scars.critical) : null) : null,
     u.data.notes ? h('p.notes', u.data.notes) : null);
 }
+
+function restBadge(u) {
+  const nr = nextJobRound(u.player_id);
+  const out = [];
+  if (u.data.lost) out.push(badge(`💀 ${u.data.lost} Modell${u.data.lost > 1 ? 'e' : ''} dauerhaft tot`, 'warn'));
+  if (u.data.hungry) out.push(badge('🍖 hungert', 'warn'));
+  if (nr != null) { const j = unitJob(u, nr); if (j !== 'fight') out.push(badge(`${JOBS[j].icon} ${JOBS[j].label} (Runde ${nr})`, 'gold')); }
+  return out;
+}
+export function jobSelect(u, onDone) {
+  const nr = nextJobRound(u.player_id);
+  if (nr == null) return null;
+  const cur = unitJob(u, nr);
+  const s = select(Object.entries(JOBS).map(([k, v]) => [k, `${v.icon} ${v.label}`]), cur, async v => {
+    const ok = await setJob(u, v);
+    if (ok === false) s.value = cur;
+    else { toast(v === 'fight' ? `${u.name} kämpft mit.` : `${u.name}: ${JOBS[v].label} in Runde ${nr}.`, 'ok'); onDone ? onDone() : window.__redraw(); }
+  }, { class: 'job-sel', title: 'Auftrag für die nächste Runde – alles außer „Kämpfen“ verpasst die Schlacht' });
+  return s;
+}
+function restToggle(u) { return jobSelect(u); }
 
 async function addUnit(pid, cat, opts = {}) {
   const pl = playerById(pid), us = unitsOf(pid);
@@ -281,11 +305,14 @@ export function editUnit(u) {
     if (pathSel.value === '__custom') fields.path = customPath.value || null;
     else fields.path = pathSel.value || null;
     if (fields.is_general) { fields.auxiliary = 0; fields.regiment_of = null; }
-    d.trait = trait.value || undefined; d.artefact = art.value || undefined;
-    if (conc) d.concoction = conc.value || undefined;
+    d.trait = trait.value || null; d.artefact = art.value || null;
+    if (conc) d.concoction = conc.value || null;
     d.scars = { serious: scarS.value || undefined, severe: scarV.value || undefined, critical: scarC.value || undefined };
-    d.notes = notes.value || undefined;
-    const ops = [{ op: 'update', id: u.id, fields, data: d }];
+    d.notes = notes.value || null;
+    // Nur die im Dialog bearbeiteten Felder schicken
+    const patch = { abilities: d.abilities || [], trait: d.trait, artefact: d.artefact, scars: d.scars, notes: d.notes };
+    if (conc) patch.concoction = d.concoction;
+    const ops = [{ op: 'update', id: u.id, fields, data: patch }];
     if (fields.is_general && !u.is_general) us.filter(x => x.is_general && x.id !== u.id).forEach(x => ops.push({ op: 'update', id: x.id, fields: { is_general: 0 } }));
     await rosterOps(ops, `bearbeitet ${fields.name}.`, pid);
     m.close(); toast('Gespeichert.', 'ok'); window.__redraw();
