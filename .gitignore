@@ -27,3 +27,5 @@ venv/
 aos-kampagne/.wrangler/
 aos-kampagne/wrangler.toml
 aos-kampagne/node_modules/
+
+.wrangler/

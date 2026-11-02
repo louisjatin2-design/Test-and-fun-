@@ -2,9 +2,19 @@
 // Der Browser spricht nie direkt mit der Datenbank: jede Anfrage läuft hier durch,
 // prüft die Sitzung und liefert nur Daten der eigenen Kampagne.
 import { PACKS, packOf, allowedTargets, discoverRoutes } from '../public/js/packs.js';
+import { SCHEMA } from './schema.js';
 
 const SESSION_DAYS = 60;
 const PBKDF2_ITER = 10000;
+
+// ---------- Tabellen beim ersten Aufruf anlegen ----------
+let schemaReady = false;
+async function ensureSchema(env) {
+  if (schemaReady) return;
+  const t = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='events'").first();
+  if (!t) await env.DB.batch(SCHEMA.map(q => env.DB.prepare(q)));
+  schemaReady = true;
+}
 
 // ---------- Hilfsfunktionen ----------
 const json = (data, status = 200, headers = {}) =>
@@ -382,6 +392,7 @@ async function rosterOps(env, ctx, body) {
 export async function handle(context) {
   const { request: req, env } = context;
   if (!env.DB) return json({ error: 'D1-Datenbank ist nicht verbunden (Binding „DB“ fehlt).' }, 500);
+  await ensureSchema(env);
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/api\/?/, '').replace(/\/$/, '');
   const method = req.method;
