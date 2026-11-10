@@ -1,0 +1,12 @@
+{
+  "name": "aos-kampagne",
+  "private": true,
+  "type": "module",
+  "description": "Path-to-Glory-Kampagnen-Manager (Age of Sigmar 4) – Cloudflare Workers + D1",
+  "scripts": {
+    "test": "node --test --no-warnings \"tests/*.test.mjs\"",
+    "schema": "node tools/build_schema.mjs",
+    "dev": "npx wrangler dev --config ../wrangler.jsonc"
+  },
+  "engines": { "node": ">=22.13" }
+}

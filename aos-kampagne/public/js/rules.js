@@ -1,6 +1,8 @@
 // Regeldaten in eigenen Worten (deutsche Kurzfassungen) für Assistenten und Regelwerk.
 // Vollständige Originaltexte: Wahapedia bzw. eure Battlepack-Bücher.
 
+import { PACKS } from './packs.js';
+
 // ---------- Pfade ----------
 // who: 'hero' | 'nonhero' | 'any'; req: Zusatzbedingung (Schlüsselwort)
 const A = (name, when, fx) => ({ name, when, fx });
@@ -151,25 +153,20 @@ export const RC = {
   enhancementCost: 3, spellCost: 2, terrainCost: 3, weaponCost: 2, rorCost: 2,
   recruitCost(points) { return points <= 100 ? 2 : points <= 200 ? 3 : points <= 300 ? 4 : points <= 400 ? 6 : points <= 500 ? 8 : points <= 600 ? 10 : 15; },
   retireRefund(points) { return points <= 200 ? 1 : points <= 300 ? 2 : points <= 400 ? 3 : points <= 500 ? 4 : 5; },
-  tables: {
-    outskirts: { name: 'Scorched Outskirts', die: 'W6', rows: [[1, 'Rift in the Peaks'], [2, 'Rise Through the Ashes'], [3, 'Standing on Skulls'], [4, 'Ransack the Encampment'], [5, 'Blood in the Valleys'], [6, 'Light the Fires']] },
-    gnaw: { name: "Gnaw's Edge", die: 'W6', rows: [[[1, 3], 'Twisted by Rage'], [[4, 6], 'Storm the Land Bridge']] },
-    shores: { name: 'Hateful Shores', die: 'W6', rows: [[[1, 2], 'Beneath the Shadow of Brazenskull'], [[3, 4], 'Assault on the Sea Cave'], [[5, 6], 'Along the Crumbling Coast']] },
-    claw: { name: "Hel's Claw", die: '—', rows: [[[1, 6], "Raid on Hel's Claw"]] },
-  },
+  tables: PACKS.rc.tables,
   battleplans: {
-    'Rift in the Peaks': 'Nord gegen Süd. Siegpunkte für gehaltene Missionsziele und Vernichtung.',
-    'Rise Through the Ashes': 'Nord gegen Süd. Take and Hold: 1 SP pro kontrolliertem Ziel am Zugende.',
-    'Standing on Skulls': 'West gegen Ost. 2 SP pro vernichtetem Monster, 1 SP pro anderer vernichteter Einheit.',
-    'Ransack the Encampment': 'Verteidiger gegen Plünderer. Take and Hold; der Plünderer erhält zusätzlich 1 SP pro vernichteter Einheit.',
-    'Blood in the Valleys': 'Vereintes gegen geteiltes Gebiet. Wer am Ende mehr Einheiten vollständig im Niemandsland hat, gewinnt.',
-    'Light the Fires': 'West gegen Ost. Take and Hold an den Kohlebecken.',
-    'Twisted by Rage': 'Henker gegen Gejagten. Stirbt der General des Gejagten, gewinnt der Henker – sonst der Gejagte.',
-    'Storm the Land Bridge': 'Ein einziges Ziel in der Mitte (Umkämpfende haben STRIKE-LAST). Wer es am Ende hält, gewinnt.',
-    'Beneath the Shadow of Brazenskull': 'Grenz- gegen Zentralgebiet. Wer am Ende mehr Ziele hält, gewinnt.',
-    'Assault on the Sea Cave': 'Plünderer gegen Hortenden. Der Plünderer darf kontrollierte Ziele entfernen; 0 Ziele = Plünderer siegt, 1 = Unentschieden, 2+ = Hortender siegt.',
-    'Along the Crumbling Coast': 'Bröckel- gegen Neuland-Gebiete. Take and Hold plus Bonus für unbestrittene Ziele.',
-    "Raid on Hel's Claw": 'Finale! Beide Armeen in zwei Kontingenten. Wer am Ende den Emberstone-Hort trägt, gewinnt die Kampagne.',
+    'Rift in the Peaks': 'Nord gegen Süd, 3 Ziele. Fortified Position: am Ende deines Zuges 1 SP für jedes Ziel, das du kontrollierst und das kein Feind umkämpft.',
+    'Rise Through the Ashes': 'Nord gegen Süd, 3 Ziele. Take and Hold: am Ende deines Zuges 1 SP pro kontrolliertem Ziel.',
+    'Standing on Skulls': 'West gegen Ost, keine Ziele. Am Ende deines Zuges 2 SP pro Monster und 1 SP pro anderer Einheit, die du in diesem Zug vernichtet hast.',
+    'Ransack the Encampment': 'Verteidiger gegen Plünderer, 3 Ziele (Aufstellung schon ab 6" vom Feindgebiet). Take and Hold; der Plünderer erhält zusätzlich 1 SP pro Einheit, die er in einem Zug vernichtet.',
+    'Blood in the Valleys': 'Vereintes gegen geteiltes Gebiet, keine Siegpunkte. Wer am Ende mehr Einheiten vollständig im Niemandsland hat, gewinnt; bei Gleichstand Unentschieden.',
+    'Light the Fires': 'West gegen Ost, 2 Ziele (die Kohlebecken). Take and Hold: am Ende deines Zuges 1 SP pro kontrolliertem Ziel.',
+    'Twisted by Rage': 'Henker gegen Gejagten (Gejagter = wer weniger Splitter gesammelt hat). Der General des Gejagten ist als „Guarded Hero“ nur aus 3" beschießbar. Ist er am Ende vernichtet, gewinnt der Henker – sonst der Gejagte.',
+    'Storm the Land Bridge': 'Ein einziges Ziel in der Mitte; wer es umkämpft, hat STRIKE-LAST. Wer es am Ende kontrolliert, gewinnt; kontrolliert es niemand: Unentschieden.',
+    'Beneath the Shadow of Brazenskull': 'Grenz- gegen Zentralgebiet, 3 Ziele. Wer am Ende mehr Ziele kontrolliert, gewinnt; bei Gleichstand Unentschieden.',
+    'Assault on the Sea Cave': 'Plünderer gegen Hortenden, 4 Ziele (Aufstellung schon ab 3" vom Feindgebiet). Am Ende jeder Schlachtrunde darf der Plünderer 1 oder 2 Ziele entfernen, die er kontrolliert. Am Ende: 0 Ziele = Plünderer siegt, 1 = Unentschieden, 2+ = Hortender siegt.',
+    'Along the Crumbling Coast': 'Bröckel- gegen Neuland-Gebiete, 3 Ziele. Am Ende deines Zuges 1 SP pro kontrolliertem Ziel und 1 weiterer SP, wenn kein Feind es umkämpft.',
+    "Raid on Hel's Claw": 'Finale! Beide Armeen teilen sich in zwei möglichst gleich große Kontingente (Gebiet A und B). Wer den Emberstone-Hort kontrolliert, kann ihn am Zugende aufnehmen; der Träger erleidet in jeder eigenen Bewegungsphase auf 2+ so viel tödlichen Schaden wie gewürfelt (Monster: +4). Wer am Ende den Hort trägt, gewinnt die Kampagne; liegt er auf dem Feld: Unentschieden.',
   },
   twistTable: [[1, 'Kein Twist in dieser Schlacht'], [2, 'Volcanic Incandescence'], [3, 'Mounting Corruption'], [4, 'Ash Storm'], [5, 'Raging Winds'], [6, 'Der Spieler mit dem niedrigsten General-Rang wählt die Tabelle (bei Gleichstand neu würfeln)']],
   twists: {
@@ -226,18 +223,18 @@ export const BW = {
   rankMin: [0, 5, 15, 30, 45],
   maxRegiments: 5,
   battleplans: {
-    "Thyria's Bounty": { win: 'Ab Runde 3: wer eine Ernte-Marke an eigener Zutaten-Gruppe hat (und der Gegner nicht), gewinnt sofort; sonst nach Siegpunkten.', ability: ['Sanitised', 'Nächste Schlacht: +1 auf Reinigungswürfe.'], misc: 'Eine Verbesserung ODER einen Zauber/ein Gebet.' },
+    "Thyria's Bounty": { win: 'Ab Schlachtrunde 3, am Rundenende: Steht eine deiner Einheiten mit Ernte-Marke in 1" einer eigenen Zutaten-Gruppe (und dem Gegner gelingt das nicht), gewinnst du sofort einen großen Sieg. Sonst am Ende: wer mehr Einheiten mit Ernte-Marke hat, erringt einen kleinen Sieg; bei Gleichstand Unentschieden.', ability: ['Sanitised', 'Nächste Schlacht: +1 auf Reinigungswürfe.'], misc: 'Eine Verbesserung ODER einen Zauber/ein Gebet.' },
     'Forest Fortress': { win: 'Angreifer gegen Verteidiger: Ist die Festung am Ende zerstört, gewinnt der Angreifer, sonst der Verteidiger.', ability: ['Expert Garrison', '1× pro Schlacht: Einheit in 3" von Gelände/Ziel +1 Rettung bis Zugende.'], misc: 'Eine Verbesserung ODER einen Zauber/ein Gebet.' },
-    'A Dense and Choking Maze': { win: 'Siegpunkte für kontrollierte Navigations-Wegmarken (3 SP) plus Bonus für unbestrittene (2 SP). Kleiner Sieg: W6 – bei 5–6 bekommt der Gegner die Belohnungswahl.', ability: ['Tactical Repositioning', '1× pro Schlacht: Einheit bewegt sich 2W6" (nicht in den Nahkampf).'], misc: 'Einen Zauber/ein Gebet.' },
-    'Cursed Kernel': { win: 'Liegt der Fäulnis-Samen am Ende vollständig in deinem Gebiet, gewinnt der Gegner. Sonst Unentschieden.', ability: ['Wyrdron Seed', '1× pro Schlacht: Feind in 9" eines Helden – 1–2: weniger Angriffswürfel, 3+: so viel tödlicher Schaden.'], misc: 'Eine zweite Einheit als „Favoured Warriors“ wählen.' },
-    'Escort to the Wellspring Grove': { win: 'Begleiter gegen Hinterhalt: erreicht der Verwundete den Fluchtweg, gewinnt der Begleiter – sonst der Hinterhalt.', ability: ['Defiant in the Face of Danger', '1× pro Schlacht: Waffenfähigkeiten eines Feindes wirken bis Zugende nicht.'], misc: 'Einen Zauber/ein Gebet.' },
-    'Nexuses of Contamination': { win: 'Wer mehr Gelände gereinigt hat, gewinnt. Gleichstand = Unentschieden.', ability: ['Proven Survivors', '1× pro Schlacht: eine Einheit Ward 5+ für einen Zug.'], misc: 'Eine Einheit dieser Schlacht verliert W3+3 Kampfwunden.' },
-    'Precarious Crossing': { win: 'Erreicht die Brücken-Stabilisierung 120+ und du kontrollierst die Brücke, gewinnst du. Sonst Unentschieden.', ability: ['Dauntless', '1× pro Schlacht: bis zu W3 Einheiten bewegen sich in der Aufstellung.'], misc: '10W6 Ruhmespunkte.' },
-    'Emergency Foraging': { win: 'Ab Runde 3 Siegbedingung über gesammelte Vorräte (siehe Battleplan).', ability: ['Spiteful Attitude', '1× pro Schlacht: −1 Verwunden im Nahkampf gegen eine Einheit.'], misc: 'Eine Verbesserung ODER einen Zauber/ein Gebet.' },
-    'The Call of Sacrifice': { win: 'Opfer-Mechanik und Siegpunkte (siehe Battleplan).', ability: ['One with Thyria', '1× pro Schlacht: feindlicher Held in 18" deines Generals −1 Rettung und Ward.'], misc: 'Eine Verbesserung ODER einen Zauber/ein Gebet.' },
-    'Vital Alignment': { win: 'Kontrollierst du am Zugende alle 4 Leylinien-Knoten, gewinnst du sofort; sonst nach Siegpunkten.', ability: ['Empowered by Ghyran', '1× pro Schlacht: Held +1 Machtstufe oder wird Zauberer/Priester (1).'], misc: 'Eine Kampfnarbe einer Einheit entfernen.' },
-    'Creeping Rootstalks': { win: 'Arboreal Guardian: 5 SP pro kontrolliertem Mutterbaum am Zugende.', ability: ['Briarseed Blessings', '1× pro Schlacht: Einheit, die angegriffen hat: W3 → +1 Attacke / Durchschlag / Schaden.'], misc: 'Eine kostenlose Eigenart für das Regiment of Ghyran oder ein Upgrade für die Landmark of Ghyran.' },
-    'Be It Purity or Putrescence': { win: 'Finale: Die Quelle der Verderbnis. Großer Sieg = Kampagnensieg (danach W6 Kampfwunden je Einheit heilen und eine Narbe entfernen).', ability: ['Purifiers of the Blighted Wilds', 'Trophäe: 1× pro Schlacht Heilen (3) bei jeder befreundeten Einheit – auch in künftigen Kampagnen.'], misc: '—' },
+    'A Dense and Choking Maze': { win: 'Am Ende deines Zuges 3 SP pro kontrollierter Navigations-Wegmarke und 2 weitere SP, wenn kein Feind sie umkämpft. Bei einem kleinen Sieg würfelt der Sieger: 1–4 er wählt die Belohnung, 5–6 der Gegner wählt.', ability: ['Tactical Repositioning', '1× pro Schlacht: Einheit bewegt sich 2W6" (nicht in den Nahkampf).'], misc: 'Einen Zauber/ein Gebet.' },
+    'Cursed Kernel': { win: 'Liegt der Fäulnis-Samen am Ende vollständig in deinem Gebiet, erringt dein Gegner einen großen Sieg. Sonst Unentschieden.', ability: ['Wyrdron Seed', '1× pro Schlacht: Feind in 9" eines Helden – 1–2: weniger Angriffswürfel, 3+: so viel tödlicher Schaden.'], misc: 'Eine zweite Einheit als „Favoured Warriors“ wählen.' },
+    'Escort to the Wellspring Grove': { win: 'Begleiter gegen Hinterhalt: Steht der Verwundete am Ende einer Schlachtrunde in 6" der Fluchtweg-Kante und nicht im Nahkampf, gewinnt der Begleiter – sonst am Ende der Hinterhalt.', ability: ['Defiant in the Face of Danger', '1× pro Schlacht: Waffenfähigkeiten eines Feindes wirken bis Zugende nicht.'], misc: 'Einen Zauber/ein Gebet.' },
+    'Nexuses of Contamination': { win: 'Wer am Ende mehr Gelände gereinigt hat, erringt einen großen Sieg. Gleichstand = Unentschieden.', ability: ['Proven Survivors', '1× pro Schlacht: eine Einheit Ward 5+ für einen Zug.'], misc: 'Eine Einheit dieser Schlacht verliert W3+3 Kampfwunden.' },
+    'Precarious Crossing': { win: 'Erreicht die Brücken-Stabilisierung am Ende einer Schlachtrunde 120 oder mehr und du kontrollierst die Brücke, erringst du einen großen Sieg. Sonst Unentschieden.', ability: ['Dauntless', '1× pro Schlacht: bis zu W3 Einheiten bewegen sich in der Aufstellung.'], misc: '10W6 Ruhmespunkte.' },
+    'Emergency Foraging': { win: 'Ab Schlachtrunde 3, am Rundenende: Wer im Lauf der Schlacht alle 5 Sammelstellen kontrolliert hat, erringt einen großen Sieg (beide: Unentschieden). Sonst am Ende: wer mehr Sammelstellen kontrolliert hat, erringt einen kleinen Sieg; bei Gleichstand Unentschieden.', ability: ['Spiteful Attitude', '1× pro Schlacht: −1 Verwunden im Nahkampf gegen eine Einheit.'], misc: 'Eine Verbesserung ODER einen Zauber/ein Gebet.' },
+    'The Call of Sacrifice': { win: 'Am Ende deines Zuges 2 SP pro kontrolliertem Ziel. Am Schlachtende werden die „würdigen Helden“ aufgedeckt: Wurde der würdige Held eines Spielers vernichtet, erhält dessen Gegner 20 SP.', ability: ['One with Thyria', '1× pro Schlacht: feindlicher Held in 18" deines Generals −1 Rettung und Ward.'], misc: 'Eine Verbesserung ODER einen Zauber/ein Gebet.' },
+    'Vital Alignment': { win: 'Kontrollierst du am Ende eines Zuges alle 4 Leylinien-Knoten, erringst du sofort einen großen Sieg. Sonst am Ende: wer mehr Knoten kontrolliert, erringt einen kleinen Sieg; bei Gleichstand Unentschieden.', ability: ['Empowered by Ghyran', '1× pro Schlacht: Held +1 Machtstufe oder wird Zauberer/Priester (1).'], misc: 'Eine Kampfnarbe einer Einheit entfernen.' },
+    'Creeping Rootstalks': { win: 'Arboreal Guardian: am Ende deines Zuges 5 SP pro kontrolliertem Mutterbaum.', ability: ['Briarseed Blessings', '1× pro Schlacht: Einheit, die angegriffen hat: W3 → +1 Attacke / Durchschlag / Schaden.'], misc: 'Eine kostenlose Eigenart für das Regiment of Ghyran oder ein Upgrade für die Landmark of Ghyran.' },
+    'Be It Purity or Putrescence': { win: 'Finale an der Quelle der Verderbnis. Siegpunkte: 5 SP am Ende jedes Zuges je Gelände, das deine Armee gereinigt hat; 5 SP, wenn du eine feindliche Einheit vernichtest, die gereinigt hat; 10 SP für das Reinigen der Quelle; 10 SP, wenn du die Einheit vernichtest, die die Quelle gereinigt hat; 10 SP am Ende für die Kontrolle der Quelle. Mehr Siegpunkte = großer Sieg = Kampagnensieg, sonst Unentschieden (hier gibt es keinen kleinen Sieg).', ability: ['Purifiers of the Blighted Wilds', 'Trophäe des Kampagnensiegers: 1× pro Schlacht Heilen (3) bei jeder befreundeten Einheit – auch in künftigen Kampagnen.'], misc: 'Nur der Sieger: jede Einheit heilt W6 Kampfwunden, danach eine Narbe entfernen.' },
   },
   scars: {
     serious: [['1–2', 'Cyclical Melancholy', '−10 eigener Kontrollwert, aber +3 für Befreundete vollständig in Kontrollbereich.'], ['3–4', 'Splinterskin', 'Schüsse aus 12" oder näher +1 Verwunden, aus über 12" −1.'], ['5–6', 'Graspspite Musk', 'Rennen und „Redeploy“ mit W3; Feinde, die sich aus dem Nahkampf zurückziehen, erleiden W6 statt W3.']],
@@ -320,124 +317,178 @@ export function forgeApply(weapon, c1, c2) {
   return { weapon: w, text: desc.join(', ') };
 }
 
+// ---------- Links zu den Originaltexten ----------
+export const CORE_RULES_URL = 'https://wahapedia.ru/aos4/the-rules/the-core-rules/';
+// Abweichende Schreibweisen der Sprungmarken auf Wahapedia
+const ANCHOR_FIX = { 'Be-It-Purity-or-Putrescence': 'Be-it-Purity-or-Putrescence', 'Path-of-the-Weald-born': 'Path-of-the-Weald-Born', 'The-Warped-Saboteur': 'Warped-Saboteur', 'The-Weird-crafta': 'The-Weird-Crafta' };
+const anchorOf = name => { const a = String(name).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, ''); return ANCHOR_FIX[a] || a; };
+export function wahaLink(packId, anchor) { return PACKS[packId === 'bw' ? 'bw' : 'rc'].wahapedia + (anchor ? '#' + anchor : ''); }
+// Schlachtplan: in Blighted Wilds gibt es je Plan zwei Abschnitte (Belohnung und Karte) – die Karte trägt „-1“
+export const battleplanLink = (packId, name) => wahaLink(packId, anchorOf(name) + (packId === 'bw' ? '-1' : ''));
+export const pathLink = path => wahaLink(path.src, anchorOf(path.name));
+
 // ---------- Regelwerk-Kapitel (Nachschlagen) ----------
+// Jedes Kapitel: id, title, body (Absätze, **fett** möglich), ref (Sprungmarke auf Wahapedia), paths (Pfad-Liste anhängen)
 export function rulebook(packId) {
-  const common = [
+  const bw = packId === 'bw';
+  return [
     { id: 'ablauf', title: 'So läuft eine Runde in der App', body: [
       'Jede Runde hat drei Phasen: **Zug** → **Schlachten** → **Aftermath**.',
-      '**Zug:** Jeder wählt geheim ein Feld. Erst wenn alle gezogen haben, deckt die App alle Züge gleichzeitig auf.',
+      '**Zug:** Jeder wählt geheim ein Feld. Erst wenn alle gezogen haben, deckt die App alle Züge gleichzeitig auf. Bis dahin kannst du deinen Zug noch ändern.',
       '**Begegnungen:** Stehen zwei Spieler auf demselben Feld, kämpfen sie gegeneinander. Wer allein steht, wird mit einem anderen Spieler gepaart, der ebenfalls allein steht. Bleibt einer übrig, kämpft er gegen einen Gastspieler (eine außenstehende Person).',
-      '**Ergebnis:** Ein Beteiligter trägt Sieger, Siegpunkte und Verluste ein. Der Sieger übernimmt sein Feld; wer auf demselben Feld verliert, zieht sich auf sein vorheriges Feld zurück.',
-      '**Aufträge:** Zu Beginn der Runde kannst du Einheiten zum Erholen, Schürfen oder Nahrungssammeln schicken – sie verpassen dann die Schlacht.',
+      bw ? '**Schlachtplan:** Steht ihr auf demselben Feld, ist dessen Schlachtplan gesetzt. Bei einer Paarung schlägt die App einen Plan vor, den ihr beide freigeschaltet habt – ihr könnt jeden gemeinsamen Plan wählen.'
+        : '**Schlachtplan-Tabelle:** Sie richtet sich nach der Karte. Es zählt die am weitesten fortgeschrittene Zone der beiden Spieler (wie im Battlepack reicht es, wenn einer sie freigeschaltet hat). Das Finale in Hel\'s Claw gibt es nur, wenn beide dort stehen.',
+      '**Ergebnis:** Ein Beteiligter trägt Sieger, Siegpunkte und Verluste ein. Der Sieger übernimmt sein Feld; wer auf demselben Feld verliert, zieht sich auf sein vorheriges Feld zurück. Vertippt? Solange noch niemand mit dem Aftermath begonnen hat, kann ein Beteiligter das Ergebnis korrigieren – danach nur noch der Master.',
+      '**Aufträge:** Zu Beginn der Runde kannst du Einheiten zum Erholen, Schürfen oder Nahrungssammeln schicken – sie verpassen dann die Schlacht (Hausregel).',
       '**Aftermath:** Danach geht jeder Spieler den Aftermath-Assistenten durch (inkl. Versorgung). Sind alle Spiele und Aftermaths fertig, startet die nächste Runde automatisch.',
-      'Der Master kann jederzeit Züge aufdecken, die Runde weiterschalten, Spieler entfernen und PINs zurücksetzen.',
+      '**Würfel:** Du kannst die App würfeln lassen oder echte Würfel werfen und das Ergebnis eintragen. Ein App-Wurf zählt – neu würfeln geht nicht. Jede Änderung an Währung und Vorräten steht mit dem echten Betrag im Verlauf.',
+      '**Finale gegen Gastspieler:** Nach den Battlepack-Regeln wird das Finale zwischen zwei Kampagnenspielern ausgetragen. Der Master kann in den Einstellungen erlauben, dass es auch gegen einen Gastspieler zählt.',
+      'Der Master kann jederzeit Züge aufdecken, die Runde weiterschalten, Ergebnisse korrigieren, Vorräte anpassen, Spieler entfernen und PINs zurücksetzen.',
     ] },
-    { id: 'roster', title: 'Roster erstellen', body: packId === 'bw' ? [
+    { id: 'roster', title: 'Roster erstellen', ref: 'Getting-Started', body: bw ? [
       '**Startpunkte:** empfohlen 1000 Punkte.',
       '**Reihenfolge:** Fraktion → (Kampfformation) → General → Regimenter → (Regiment of Ghyran) → Hilfseinheiten → (Fraktionsgelände und/oder Landmark of Ghyran) → Pfad des Generals → Verbesserungen, Zauber und Gebete.',
-      '**General:** 1 Held deiner Fraktion, Einzelmodell, führt sein eigenes Regiment mit bis zu 4 Nicht-Helden.',
-      '**Weitere Regimenter:** bis zu 4 (insgesamt max. 5) – je 1 Held derselben Großen Allianz + bis zu 3 Nicht-Helden mit seinem Fraktions-Schlüsselwort.',
-      '**Hilfseinheiten (Auxiliary):** beliebig viele; wer weniger hat, bekommt pro Runde 1 Befehlspunkt extra.',
-      '**Verstärkt:** doppelte Mindestgröße zu doppelten Punkten (nicht bei Größe 1).',
-      '**Start-Verbesserungen:** 1 Heldeneigenschaft und 1 Artefakt (aus deinem Battletome oder Pride of Thyria / Thyrian Wonders).',
-      '**Arcane Tome:** bis zu 3 Zauber aus 1 Lore, 3 Gebete aus 1 Lore, 3 Beschwörungen aus 1 Manifestations-Lore. Maximal 6 normale + 3 Beschwörungsplätze.',
+      '**General:** 1 Held deiner Fraktion, Einzelmodell, führt sein eigenes Regiment mit bis zu 4 Nicht-Helden mit seinem Fraktions-Schlüsselwort.',
+      '**Weitere Regimenter:** bis zu 4 (insgesamt max. 5) – je 1 Held derselben Großen Allianz + bis zu 3 Nicht-Helden mit seinem Fraktions-Schlüsselwort. Erlaubt es das Profil, darf ein Held anstelle einer Einheit im Regiment eines anderen Helden stehen.',
+      '**Hilfseinheiten (Auxiliary):** beliebig viele; wer weniger hat, bekommt pro Schlachtrunde 1 Befehlspunkt extra.',
+      '**Verstärkt:** doppelte Mindestgröße zu doppelten Punkten (nicht bei Größe 1 oder wenn das Profil es verbietet). Später lässt sich im Aftermath verstärken.',
+      '**Start-Verbesserungen:** 1 Heldeneigenschaft und 1 Artefakt (aus deinem Battletome oder Pride of Thyria / Thyrian Wonders). Keine Einheit hat zwei Verbesserungen derselben Art, keine Verbesserung kommt doppelt vor.',
+      '**Arcane Tome:** bis zu 3 Zauber aus 1 Lore, 3 Gebete aus 1 Lore, 3 Beschwörungen aus 1 Manifestations-Lore. Maximal 6 normale + 3 Beschwörungsplätze. Alle Zauberer kennen alle Zauber im Tome, alle Priester alle Gebete.',
       '**General:** startet mit 5 Ruhm (Renown) und Rang Aspiring – wähle sofort Pfad und eine Aspiring-Fähigkeit.',
+      '**Fraktionsgelände:** 1 Fraktionsgelände und 1 Landmark of Ghyran sind erlaubt.',
+      '**Regiment of Ghyran:** höchstens 1; seine Einheiten können nicht General sein, sammeln aber Ruhm und betreten Pfade.',
       '**Einzigartige Einheiten** werden nicht empfohlen; wenn erlaubt, bekommen sie weder Verbesserungen noch Pfade.',
+      '**Bestehende Armee:** Wenn eure Gruppe zustimmt, kannst du eine Armee aus einer anderen Path-to-Glory-Kampagne weiterführen (Ränge, Verbesserungen, Kampfwunden und Narben bleiben; ohne Ruhm startet jede Einheit mit dem Minimum ihres Rangs). In der App trägt der Master das über „Bearbeiten“ ein.',
     ] : [
       '**Startpunkte:** 1000 Punkte, höchstens 350 Punkte für eine einzelne Einheit (Ausnahme: Helden bei Behemats Söhnen).',
       '**Reihenfolge:** Fraktion → (Kampfformation) → General → Regimenter → Hilfseinheiten → Pfad des Generals → bis zu 2 Zauber (wenn Zauberer) und 2 Gebete (wenn Priester).',
-      '**General:** 1 Held deiner Fraktion, Einzelmodell, führt sein Regiment mit bis zu 4 Nicht-Helden.',
-      '**Weitere Regimenter:** bis zu 4 – je 1 Held derselben Großen Allianz + bis zu 3 Nicht-Helden mit seinem Fraktions-Schlüsselwort.',
-      '**Hilfseinheiten (Auxiliary):** beliebig viele; wer weniger hat, bekommt pro Runde 1 Befehlspunkt extra.',
+      '**General:** 1 Held deiner Fraktion, Einzelmodell, führt sein Regiment mit bis zu 4 Nicht-Helden mit seinem Fraktions-Schlüsselwort.',
+      '**Weitere Regimenter:** bis zu 4 – je 1 Held derselben Großen Allianz + bis zu 3 Nicht-Helden mit seinem Fraktions-Schlüsselwort. Erlaubt es das Profil, darf ein Held anstelle einer Einheit im Regiment eines anderen Helden stehen.',
+      '**Hilfseinheiten (Auxiliary):** beliebig viele; wer weniger hat, bekommt pro Schlachtrunde 1 Befehlspunkt extra.',
       '**Verstärkt:** doppelte Mindestgröße zu doppelten Punkten (nicht bei Größe 1 oder wenn das Profil es verbietet).',
       '**Keine Start-Verbesserungen und kein Fraktionsgelände** – beides kommt später über Splitter.',
-      '**Arcane Tome:** 1 UNLIMITED-Zauber deiner Fraktion + 1 Zauber beim ersten Zauberer; dasselbe für Gebete. Maximal 6 Einträge.',
-      '**General** startet auf Rang Aspiring: Pfad und eine Aspiring-Fähigkeit sofort wählen.',
-      '**Ravaged Coast Regiment of Renown:** max. 1, nur die 4 Regimenter aus diesem Battlepack, kann nicht General sein.',
+      '**Arcane Tome:** 1 UNLIMITED-Zauber deiner Fraktion + 1 Zauber, sobald der erste Zauberer im Roster steht; dasselbe für Gebete und Priester. Maximal 6 Einträge.',
+      '**General** startet auf Rang Aspiring: Pfad und eine Aspiring-Fähigkeit sofort wählen. Alle anderen Einheiten betreten Pfade erst über Splitter.',
+      '**Ravaged Coast Regiment of Renown:** nicht beim Start; später max. 1, nur die 4 Regimenter aus diesem Battlepack, kann nicht General sein.',
+      '**Einzigartige Einheiten** werden nicht empfohlen; wenn erlaubt, bekommen sie weder Verbesserungen noch Pfade.',
     ] },
-    ...(packId === 'bw' ? [
-      { id: 'schlacht', title: 'Vor der Schlacht', body: [
-        '**Schlachtplan:** Der Spieler mit dem niedrigsten General-Rang wählt einen Schlachtplan, den **beide** freigeschaltet haben (am Anfang nur Thyria\'s Bounty und Forest Fortress). Gleicher Rang: Würfeln, der Gewinner wählt.',
-        '**Routen entdecken:** Thyrian Paths (durchgezogen) werden nach einer Schlacht mit diesem Schlachtplan entdeckt. Concealed Trails (rot) erst nach einem Sieg mit diesem Schlachtplan. In der App gilt: Wer mit dem Plan gewonnen hat, entdeckt dessen verborgene Pfade.',
-        '**Verseuchung:** Abwechselnd je ein Gelände außerhalb des eigenen Gebiets verseuchen, dann jedes übrige Gelände auf 4+ verseucht (nicht Fraktionsgelände/Landmark).',
-        '**Ruhende Einheit:** Jeder darf 1 Einheit ruhen lassen – sie spielt nicht mit und zählt nicht zu den Punkten. Im Aftermath heilt sie W6 Kampfwunden. In der App ist das der Auftrag „😴 Erholen“ (siehe Hausregeln).',
-        '**Ungleiche Armeen:** Ab 100 Punkten Unterschied hat die größere Armee eine Übermacht. Überschuss = Differenz − 100. So viele Punkte müssen als „Stalled Reinforcements“ in Reserve (ab Runde 2 auf 4+ einsetzbar; −1 für Held/verstärkt, −1 für Monster).',
-        '**Underdog:** wer weniger Siegpunkte hat. Wer die Initiative ergreift (als Zweiter den Prioritätswurf gewinnt und zuerst zieht), macht seinen Gegner für den Rest der Schlacht zum Underdog.',
-        '**Blighted Waters (Pflicht, jeder Zug):** zufälliges verseuchtes Gelände – Einheiten in 3" machen einen Verseuchungswurf (W3): 1 = 1 tödlicher Schaden, 2+ = STRIKE-LAST.',
-        '**Purify the Land (Ende jedes Zuges):** Einheit in 3" eines verseuchten Geländes, W6 – ab 3+ für dich gereinigt und die Einheit erhält 2 Ruhm.',
-        '**Boon of Vitality (Bewegungsphase):** Einheit in 3" eines von dir gereinigten Geländes: W6 → 3: +1 Rennen/Angriff, 4: −1 Verwunden gegen sie, 5: Ward 5+, 6: kostenloses Rally mit 3 Extra-Würfeln.',
-        '**Schlachtlänge:** Nach Runde 4 auf 1–2 Schluss, nach Runde 5 auf 1–4 Schluss, nach Runde 6 immer Schluss.',
-        '**Rückzug:** Zu Beginn deines Zuges, wenn mindestens die Hälfte deiner Startarmee vernichtet ist – der Gegner erhält einen großen Sieg.',
-        '**Sieg:** Mehr Siegpunkte = großer Sieg. Gleichstand: wer mehr Gelände gereinigt hat, erhält einen kleinen Sieg; sonst Unentschieden.',
-      ] },
-    ] : [
-      { id: 'schlacht', title: 'Vor der Schlacht', body: [
-        '**Schlachtplan:** Der Spieler mit dem niedrigsten General-Rang würfelt auf der Tabelle. Die App wählt die Tabelle nach der Zone, in der gekämpft wird (bei Paarungen über die Karte die niedrigere Zone).',
-        '**Freischaltung:** Gnaw\'s Edge ab 20 insgesamt gesammelten Splittern · Hateful Shores nach einem Sieg in Gnaw\'s Edge · Hel\'s Claw nach einem Sieg in den Hateful Shores.',
-        '**Emberstone-Cluster:** W3+1 Stück (Hateful Shores: W6), 40-mm-Marker, mehr als 6" von Kanten, Zielen und anderen Clustern; die ersten 2 ins Niemandsland.',
-        '**Collect Emberstone (Ende deines Zuges, 1× pro Armee):** Kontrollierter Cluster, Einheit in 3": 1 = W3 tödlicher Schaden an allen in 3", 2–6 = Emberstone-Marke.',
-        '**Filled with Fury:** Mit Marke −1 auf Rettung, +1 auf Verwunden. Stirbt die Einheit, fällt der Cluster wieder auf das Feld.',
-        '**Dig for Emberstone (Schlachtende):** Für jedes kontrollierte Ziel eine Einheit: 1 = 1 Kampfwunde, 4+ = Emberstone-Marke.',
-        '**Erholung (Hausregel wie in Blighted Wilds):** Jeder darf 1 Einheit pro Schlacht ruhen lassen – Auftrag „😴 Erholen“ (siehe Hausregeln).',
-        '**Ungleiche Armeen:** Ab 200 Punkten Unterschied: Überschuss = Differenz − 200; so viele Punkte als „Stalled Reinforcements“ in Reserve (auf 4+ in der Bewegungsphase einsetzbar).',
-        '**Twists:** Würfle auf der Twist-Tabelle; der Underdog (weniger Siegpunkte) würfelt jede Runde auf der gewählten Twist-Tabelle.',
-        '**Aqshian Anger:** Wer „All-out Attack“ nutzt, wird für die Phase leichter getroffen (+1 Treffen gegen ihn).',
-        '**Schlachtlänge:** Nach Runde 4 auf 1–2 Schluss, nach Runde 5 auf 1–4 Schluss, nach Runde 6 immer.',
-        '**Rückzug:** Zu Beginn deiner Heldenphase, wenn mindestens die Hälfte deiner Startarmee vernichtet ist – der Gegner erhält einen großen Sieg.',
-      ] },
-    ]),
-    packId === 'bw' ? { id: 'aftermath', title: 'Aftermath: Ruhm, Ränge und Ausbau', body: [
-      '**1. Ruhmespunkte (GP):** nach Punkten der gegnerischen Armee – gekämpft 60/110/150/180/200, großer Sieg +30/40/50/55/60, kleiner Sieg +20/30/40/45/50, General überlebt +10/15/20/25/30 (Spalten: <1000, 1000–1250, 1251–1500, 1501–2000, >2000).',
-      '**Belohnungen:** Nach großem Sieg wählt der Sieger Fähigkeits- oder Sonstige Belohnung des Schlachtplans, der Verlierer erhält die andere.',
-      '**2. Ruhm (Renown):** Jede beteiligte Einheit +W3 (vernichtet: +1). Eine Einheit (nicht der General) wird „Favoured Warriors“: +W6. Purify the Land: +2 je Erfolg.',
+    bw ? { id: 'schlacht', title: 'Vor und in der Schlacht', ref: 'Path-to-Glory-Battles-1', body: [
+      '**Schlachtplan:** Der Spieler mit dem niedrigsten General-Rang wählt einen Schlachtplan, den **beide** freigeschaltet haben (am Anfang nur Thyria\'s Bounty und Forest Fortress). Gleicher Rang: Würfeln, der Gewinner wählt.',
+      '**Routen entdecken:** Thyrian Paths (durchgezogen) werden entdeckt, sobald du mit diesem Schlachtplan gekämpft hast. Concealed Trails (rot) erst nach einem Sieg mit diesem Schlachtplan. In der App gilt: Wer mit dem Plan gewonnen hat (auch ein kleiner Sieg), entdeckt dessen verborgene Pfade. Führen mehrere Routen zu einem Plan, genügt eine.',
+      '**Schlachtfeld:** mindestens 44" × 60" und 8 Geländestücke; Gelände mehr als 3" von Kanten und Zielen und mehr als 6" voneinander.',
+      '**Verseuchung:** Nach der Gebietsverteilung verseucht abwechselnd jeder ein Gelände außerhalb des eigenen Gebiets (niedrigster General-Rang zuerst). Dann wird jedes übrige Gelände auf 4+ verseucht. Fraktionsgelände und Landmarks of Ghyran können nicht verseucht werden.',
+      '**Ruhende Einheit:** Jeder darf 1 Einheit ruhen lassen – sie spielt nicht mit und zählt nicht zu den Punkten. Im Aftermath heilt sie W6 Kampfwunden. In der App ist das der Auftrag „😴 Erholen“.',
+      '**Ungleiche Armeen:** Ab 100 Punkten Unterschied hat die größere Armee eine Übermacht. Überschuss = Differenz − 100. Einheiten mit mindestens so vielen Punkten müssen als „Stalled Reinforcements“ in Reserve.',
+      '**Timely Arrival** (1× pro Zug, deine Bewegungsphase, ab Schlachtrunde 2): W6 für eine Reserve-Einheit, −1 für Helden oder verstärkte Einheiten, −1 für Monster. Bei 4+ kommt sie ins eigene Gebiet, vollständig in 6" einer Kante und mehr als 9" von Feinden. Wer bis zum Beginn der 4. Schlachtrunde nicht da ist, gilt als vernichtet (ohne Kampfwunden).',
+      '**Underdog:** wer weniger Siegpunkte hat; bei Gleichstand gibt es keinen. **Initiative ergreifen:** Wer in der vorigen Runde Zweiter war, den Prioritätswurf gewinnt und zuerst zieht, macht seinen Gegner für den Rest der Schlacht zum Underdog (bis der andere die Initiative ergreift).',
+      '**Strategic Mastery** (1× pro Zug, Beginn des gegnerischen Zuges): Hat dein Gegner in dieser Schlachtrunde die Initiative ergriffen und du in dieser Schlacht noch nicht: W6 für jeden seiner Befehlspunkte – für jede 5+ verliert er einen und du erhältst einen.',
+      '**Blighted Waters (Pflicht, jeder Zug):** zufälliges verseuchtes Gelände – jede Einheit in 3" macht einen Verseuchungswurf (W3): 1 = 1 tödlicher Schaden, 2+ = STRIKE-LAST bis Zugende. Hat die Armee deines Gegners das Gelände schon gereinigt, trifft es nur deine eigenen Einheiten.',
+      '**Purify the Land** (1× pro Zug, Ende jedes Zuges): Einheit in 3" eines verseuchten Geländes, W6 – ab 3+ gilt es für **deine** Armee als gereinigt (für den Gegner bleibt es verseucht) und die Einheit erhält 2 Ruhm.',
+      '**Boon of Vitality** (1× pro Zug, jede Bewegungsphase): Einheit außerhalb des Nahkampfs in 3" eines von dir gereinigten Geländes, W6 → 1–2 nichts · 3: +1 Rennen/Angriff · 4: −1 Verwunden gegen sie · 5: Ward 5+ · 6: kostenloses Rally mit 3 Extra-Würfeln (jeweils bis zu deinem nächsten Zug).',
+      '**Schlachtlänge:** Nach Runde 4 auf 1–2 Schluss, nach Runde 5 auf 1–4 Schluss, nach Runde 6 immer Schluss.',
+      '**Rückzug:** Zu Beginn deines Zuges, wenn mindestens die Hälfte deiner Start-Einheiten vernichtet ist – der Gegner erhält einen großen Sieg. Abgezogene Einheiten gelten nicht als vernichtet.',
+      '**Sieg:** Mehr Siegpunkte = großer Sieg. Gleichstand: wer mehr Gelände gereinigt hat, erhält einen kleinen Sieg; sonst Unentschieden. Viele Schlachtpläne haben eigene Siegbedingungen (siehe „Tabellen & Listen“).',
+      '**Ersatz- und beschworene Einheiten** kommen nach der Schlacht nicht aufs Roster.',
+    ] } : { id: 'schlacht', title: 'Vor und in der Schlacht', ref: 'Path-to-Glory-Battles-1', body: [
+      '**Schlachtplan:** Der Spieler mit dem niedrigsten General-Rang würfelt auf der Tabelle (gleicher Rang: würfelt aus, wer würfelt). Ihr dürft euch stattdessen auf einen Schlachtplan der Tabelle einigen.',
+      '**Welche Tabelle?** Scorched Outskirts immer · Gnaw\'s Edge, sobald mindestens einer von euch insgesamt 20 Splitter gesammelt hat · Hateful Shores, sobald mindestens einer von euch mit einem Gnaw\'s-Edge-Schlachtplan gewonnen hat · Hel\'s Claw erst, wenn **beide** mit einem Hateful-Shores-Schlachtplan gewonnen haben. In der App ergibt sich die Tabelle aus eurer Position auf der Karte.',
+      '**Schlachtfeld:** mindestens 44" × 60" und 8 Geländestücke; Gelände mehr als 3" von Kanten und Zielen und mehr als 6" voneinander.',
+      '**Emberstone-Cluster:** W3+1 Stück (Hateful Shores: W6), 40-mm-Marker, abwechselnd aufstellen (niedrigster General-Rang zuerst): mehr als 6" von Kanten, Zielen und anderen Clustern. Hat der Schlachtplan Niemandsland, kommen die ersten 2 dorthin (mehr als 3" von den Gebieten).',
+      '**Seitenwahl:** Wer in der Kampagne bisher weniger Splitter gesammelt hat, verteilt die Gebiete bzw. Rollen (Gleichstand: auswürfeln) und beginnt mit der Aufstellung.',
+      '**Ungleiche Armeen:** Ab 200 Punkten Unterschied hat die größere Armee eine Übermacht. Überschuss = Differenz − 200. Einheiten mit mindestens so vielen Punkten müssen als „Stalled Reinforcements“ in Reserve.',
+      '**Timely Arrival** (1× pro Zug, deine Bewegungsphase): W6 für eine Reserve-Einheit – bei 4+ kommt sie ins eigene Gebiet, vollständig in 6" einer Kante und mehr als 9" von Feinden. Wer bis zum Beginn der 4. Schlachtrunde nicht da ist, gilt als vernichtet (ohne Kampfwunden).',
+      '**Twists:** Zu Beginn würfelt ein Spieler auf der Twist-Tabelle, welche Twist-Tabelle gilt. In jeder Schlachtrunde würfelt dann der Underdog auf dieser Tabelle.',
+      '**Underdog:** wer weniger Siegpunkte hat. Bei Gleichstand: 1. Wer in der vorigen Runde Zweiter war und jetzt zuerst zieht, macht seinen Gegner zum Underdog. 2. Sonst ist Underdog, wer in der Kampagne weniger Splitter gesammelt hat. 3. Sonst gibt es keinen – würfelt aus, wer auf der Twist-Tabelle würfelt.',
+      '**Aqshian Anger:** Wer „All-out Attack“ nutzt, wird für die Phase leichter getroffen (+1 Treffen gegen ihn).',
+      '**Poisoned Domain** (1× pro Zug, Ende deines Zuges): Für jede Einheit (Freund und Feind) in 1" eines Geländes einen W6 – bei 1 erleidet sie W6 tödlichen Schaden.',
+      '**Collect Emberstone** (1× pro Zug für die Armee, Ende deines Zuges): Kontrollierst du einen Cluster, wähle eine Einheit in 3", die nicht im Nahkampf ist und noch keine Marke hat. W6: 1 = W3 tödlicher Schaden an allen Einheiten in 3", der Cluster verschwindet · 2–6 = der Cluster verschwindet und die Einheit erhält eine Emberstone-Marke.',
+      '**Filled with Fury:** Mit Marke −1 auf Rettung, +1 auf Verwunden. Stirbt die Einheit, fällt ein Cluster in 1" aufs Feld – wurde sie im Nahkampf vernichtet, darf stattdessen die siegreiche Einheit die Marke nehmen (wenn sie noch keine hat).',
+      '**Dig for Emberstone** (Schlachtende): Für jedes Ziel, das du kontrollierst, einmal: eine Einheit dort (nicht im Nahkampf) würfelt – 1 = 1 Kampfwunde, 4+ = Emberstone-Marke.',
+      '**Erholung (Hausregel wie in Blighted Wilds):** Jeder darf 1 Einheit pro Schlacht ruhen lassen – Auftrag „😴 Erholen“ (siehe Hausregeln).',
+      '**Schlachtlänge:** Nach Runde 4 auf 1–2 Schluss, nach Runde 5 auf 1–4 Schluss, nach Runde 6 immer.',
+      '**Rückzug:** Zu Beginn deiner Heldenphase, wenn mindestens die Hälfte deiner Start-Einheiten vernichtet ist – der Gegner erhält einen großen Sieg. Abgezogene Einheiten gelten nicht als vernichtet.',
+      '**Sieg:** Mehr Siegpunkte = großer Sieg, Gleichstand = Unentschieden (kleine Siege gibt es hier nicht). Viele Schlachtpläne haben eigene Siegbedingungen (siehe „Tabellen & Listen“).',
+      '**Ersatz- und beschworene Einheiten** kommen nach der Schlacht nicht aufs Roster.',
+    ] },
+    bw ? { id: 'aftermath', title: 'Aftermath: Ruhm, Ränge und Ausbau', ref: 'The-Aftermath-Sequence-2', body: [
+      '**1. Ruhmespunkte (GP):** nach Punkten der gegnerischen Armee – gekämpft 60/110/150/180/200, großer Sieg +30/40/50/55/60, kleiner Sieg +20/30/40/45/50, General nicht erschlagen +10/15/20/25/30 (Spalten: <1000, 1000–1250, 1251–1500, 1501–2000, >2000).',
+      '**Belohnungen:** Nach einem großen Sieg wählt der Sieger die Fähigkeits- oder die Sonstige Belohnung des Schlachtplans, der Verlierer erhält die andere. Die Fähigkeit gilt nur in der nächsten Schlacht. (A Dense and Choking Maze: auch bei kleinem Sieg – der Sieger würfelt, bei 5–6 wählt der Gegner.)',
+      '**2. Ruhm (Renown):** Jede Einheit, die mitgekämpft hat: +W3 (vernichtet: +1). Eine beteiligte Einheit (nicht der General) wird „Favoured Warriors“: +W6. Purify the Land: +2 je Erfolg.',
       '**Ränge nach Ruhm:** 5–14 Aspiring · 15–29 Elite · 30–44 Mighty · 45+ Legendary. Bei 5 Ruhm Pfad wählen; bei jedem Rang eine von zwei Fähigkeiten.',
-      '**3. Roster verwalten:** Held befördern · Ausbauen: 1 neue Einheit **oder** 1 Einheit verstärken (kostet GP = Punktwert) plus ggf. 1 Landmark of Ghyran · Einheiten/Fraktionsgelände entlassen (halbe Punkte als GP zurück) · Artefakte übertragen/Verbesserungen entfernen · General wechseln (alter General W3 Kampfwunden) · Pfad wechseln (Rang −1, Ruhm auf Minimum des neuen Rangs).',
-      '**Max. 5 Regimenter.** Neue Helden bei 5 Regimentern nur als Hilfseinheit.',
-      '**Tränke (optional):** Zutaten sammeln (Einfach 5 GP, Exotisch 10 GP pro Wurf), Tränke mischen oder für 30 GP kaufen (gekauft: Nebenwirkungswurf beim Einsatz). Max. 1 Trank pro Held.',
-    ] } : { id: 'aftermath', title: 'Aftermath: Splitter, Ränge und Ausbau', body: [
-      '**1. Splitter gewinnen:** Sieg 3 · Niederlage W3 · Unentschieden W3 (einmal wiederholbar) · Hateful-Shores-Schlachtplan +W3 · +1 pro Emberstone-Marke am Schlachtende. Ruhmpunkte aus Fähigkeiten: 5 = 1 Splitter.',
-      '**2. Roster verwalten:** Held befördern · Einheiten entlassen (Rückerstattung: bis 200 Pkt 1, bis 300: 2, bis 400: 3, bis 500: 4, darüber 5) · Artefakte übertragen/Verbesserungen entfernen · General wechseln (alter General W3 Kampfwunden, behält Verbesserungen) · Pfad wechseln (Rang −1, Fähigkeiten neu wählen).',
-      '**3. Splitter ausgeben** (jede Aktion 1× pro Aftermath):',
+      '**3. Roster verwalten:** Held befördern · Ausbauen: 1 neue Einheit **oder** 1 Einheit verstärken (kostet GP = Punktwert) plus ggf. 1 Landmark of Ghyran · Einheiten/Fraktionsgelände entlassen (halbe Punkte als GP zurück) · Artefakte übertragen/Verbesserungen entfernen · General wechseln (alter General W3 Kampfwunden, behält Verbesserungen, höchstens 3 seiner Einheiten bleiben in seinem Regiment) · Pfad wechseln (Rang −1, Ruhm auf Minimum des neuen Rangs, Fähigkeiten neu wählen).',
+      '**Max. 5 Regimenter.** Neue Helden führen ein eigenes Regiment; bei 5 Regimentern kommen sie nur als Hilfseinheit dazu.',
+      '**4. Kampfwunden und Narben** – siehe nächstes Kapitel.',
+      '**Tränke (optional, War in the Blighted Wilds):** Zutaten sammeln (Einfach 5 GP, Exotisch 10 GP pro Wurf, beliebig oft), Tränke mischen oder für 30 GP kaufen (gekauft: Nebenwirkungswurf beim Einsatz). Max. 1 Trank pro Held, nicht für einzigartige Helden.',
+    ] } : { id: 'aftermath', title: 'Aftermath: Splitter, Ränge und Ausbau', ref: 'The-Aftermath-Sequence-2', body: [
+      '**1. Splitter gewinnen:** Sieg 3 · Niederlage W3 · Unentschieden W3 (einmal wiederholbar) · Hateful-Shores-Schlachtplan +W3 · +1 pro Emberstone-Marke am Schlachtende. Ruhmpunkte aus Fähigkeiten: je 5 = 1 Splitter (der Rest verfällt).',
+      '**2. Roster verwalten:** Held befördern · Einheiten entlassen (Rückerstattung: bis 200 Pkt 1, bis 300: 2, bis 400: 3, bis 500: 4, darüber 5) · Artefakte übertragen/Verbesserungen entfernen · General wechseln (alter General W3 Kampfwunden, behält Verbesserungen, höchstens 3 seiner Einheiten bleiben in seinem Regiment) · Pfad wechseln (Rang −1, Fähigkeiten neu wählen).',
+      '**3. Splitter ausgeben** (jede Aktion 1× pro Aftermath; was du nicht ausgibst, bleibt im Vorrat):',
       '· Pfad betreten (Aspiring) **1** · Elite **2** · Mighty **4** · Legendary **6** – Ränge nur der Reihe nach.',
-      '· Verbesserung **3** · Zauber/Gebet **2** (max. 6 im Arcane Tome).',
+      '· Verbesserung **3** (keine Einheit hat zwei derselben Art, keine kommt doppelt vor) · Zauber/Gebet **2** (max. 6 im Arcane Tome).',
       '· Neue Einheit (Mindestgröße) oder verstärken (nach unverstärktem Punktwert): bis 100 Pkt **2** · bis 200 **3** · bis 300 **4** · bis 400 **6** · bis 500 **8** · bis 600 **10** · darüber **15**.',
-      '· Fraktionsgelände **3** · Emberstone-Waffe schmieden **2** (+1 je Zusatzwurf) · Ravaged Coast Regiment of Renown **2**.',
+      '· Fraktionsgelände **3** (wenn du noch keines hast) · Emberstone-Waffe schmieden **2** (+1 je Zusatzwurf, Anzahl vorher ansagen) · Ravaged Coast Regiment of Renown **2**.',
+      '**Emberstone-Waffe:** zählt als Artefakt, nur für Helden ohne Artefakt. Sie ersetzt eine Waffe des Helden (keine Companion-Waffe); zerbricht sie, kommt die alte Waffe zurück.',
       '**Instabile Waffen:** Für jede Emberstone-Waffe, die nicht in diesem Aftermath geschmiedet wurde, W6 – bei 1 zerbricht sie und der Held erleidet 1 Kampfwunde.',
+      '**4. Kampfwunden und Narben** – siehe nächstes Kapitel.',
     ] },
-    { id: 'wunden', title: 'Kampfwunden, Narben und Heilung', body: [
-      '**Ruhende Einheiten** (Auftrag Erholen) heilen zuerst W6 Kampfwunden.',
-      '**Gestorbene Modelle:** je W6, bei 1 dauerhaft tot (Hausregel).',
-      '**Kampfwunden:** Jede vernichtete Einheit erleidet W3.',
-      packId === 'bw' ? '**Verseuchung:** Jede Einheit, die am Schlachtende in 3" eines verseuchten Geländes stand, erleidet 1 Kampfwunde.' : '**Emberstone:** Jede Einheit, die am Ende eine Emberstone-Marke hatte, würfelt: 1–4 = 1 Kampfwunde.',
+    { id: 'wunden', title: 'Kampfwunden, Narben und Heilung', ref: 'Tend-to-Battle-Wounds-and-Battle-Scars', body: [
+      'Reihenfolge: ' + (bw ? '**ruhende Einheiten heilen** → ' : '') + '**Kampfwunden bestimmen** → **Narben bestimmen** → **Heilungsrituale**. Narben werden also vor dem Heilen festgestellt.',
+      '**Ruhende Einheiten** (Auftrag Erholen) heilen zuerst W6 Kampfwunden' + (bw ? '.' : ' (Hausregel, in Blighted Wilds offiziell).'),
+      '**Kampfwunden:** Jede in der Schlacht vernichtete Einheit erleidet W3.',
+      bw ? '**Verseuchung:** Jede Einheit, die am Schlachtende in 3" eines verseuchten Geländes stand, erleidet 1 Kampfwunde.' : '**Emberstone:** Jede Einheit, die am Ende eine Emberstone-Marke hatte, würfelt: 1–4 = 1 Kampfwunde, 5+ = nichts.',
       '**Untimely Arrival:** Reserve-Einheiten, die nie aufs Feld kamen, erleiden keine Kampfwunden.',
-      '**Narben:** 5–8 Wunden = ernst · 9–12 = schwer · 13–17 = kritisch · 18+ = die Einheit stirbt und wird gestrichen. Jede Stufe nur einmal pro Einheit; beim ersten Erreichen auf der Tabelle würfeln. Narben bleiben, auch wenn Wunden heilen.',
-      '**Stirbt der General**, wird ein anderer Held General' + (packId === 'bw' ? ' (ohne Pfad: 5 Ruhm und kostenloser Pfad).' : ' (ohne Pfad: kostenlos Aspiring-Pfad).') + ' Ohne Helden endet deine Geschichte.',
+      '**Narben:** 5–8 Wunden = ernst · 9–12 = schwer · 13–17 = kritisch · 18+ = die Einheit erliegt ihren Verletzungen und wird samt Verbesserungen gestrichen. Jede Stufe nur einmal pro Einheit; beim ersten Erreichen auf der Tabelle würfeln. Narben bleiben, auch wenn Wunden heilen' + (bw ? ' (nur manche Belohnungen entfernen eine Narbe).' : '.'),
+      '**Stirbt der General**, wird ein anderer Held General' + (bw ? ' (hat er weder Pfad noch Ruhm: 5 Ruhm und sofort ein Pfad auf Rang Aspiring).' : ' (ohne Pfad: kostenlos einen Pfad auf Rang Aspiring).') + ' Ohne Helden endet die Geschichte dieser Armee – du kannst mit einer neuen weitermachen.',
       '**Stirbt ein Regimentsführer**, werden seine Einheiten zu Hilfseinheiten.',
-      '**Heilungsritual:** Bis zu 2 Helden würfeln je einen W6: 1 = Ritual scheitert, der Held ist bis Ende der nächsten Schlacht „erschöpft“' + (packId === 'bw' ? ' (kein Purify the Land, kein Boon of Vitality)' : ' (−1 auf Zauber-, Gebets- und Trefferwürfe)') + '. 2+ = bei einer Einheit so viele Kampfwunden entfernen.',
+      '**Heilungsritual:** Bis zu 2 Helden würfeln je einen W6: 1 = das Ritual scheitert, der Held ist bis Ende der nächsten Schlacht „erschöpft“' + (bw ? ' (kein Purify the Land, kein Ziel von Boon of Vitality)' : ' (−1 auf Zauber-, Gebets- und Trefferwürfe)') + '. 2+ = bei einer beliebigen Einheit so viele Kampfwunden entfernen.',
+      '**Gestorbene Modelle (Hausregel):** je W6, bei 1 dauerhaft tot – siehe Hausregeln.',
     ] },
-    { id: 'pfade', title: 'Pfade und Ränge', body: [
-      packId === 'bw'
-        ? 'In Blighted Wilds steigen Einheiten durch **Ruhm (Renown)** auf: 5 / 15 / 30 / 45. Erlaubt sind die Pfade aus Blighted Wilds, aus Ravaged Coast und aus eurem Battletome.'
-        : 'In Ravaged Coast kaufst du Ränge mit **Splittern**: Pfad + Aspiring 1, Elite 2, Mighty 4, Legendary 6 – immer der Reihe nach, pro Aftermath einmal „Fortschritt auf einem Pfad“.',
-      'Bei jedem Rang wählst du **eine von zwei** Fähigkeiten. Wechselst du den Pfad, sinkt der Rang um 1 und du wählst die Fähigkeiten des neuen Pfads neu.',
+    { id: 'pfade', title: 'Pfade und Ränge', ref: bw ? 'Paths-2' : 'Paths-1', body: [
+      bw
+        ? 'In Blighted Wilds steigen Einheiten durch **Ruhm (Renown)** auf: 5 / 15 / 30 / 45. Erlaubt sind die Pfade aus Blighted Wilds (inkl. Alchemist und Waldmann aus „War in the Blighted Wilds“), aus Ravaged Coast und aus eurem Battletome.'
+        : 'In Ravaged Coast kaufst du Ränge mit **Splittern**: Pfad + Aspiring 1, Elite 2, Mighty 4, Legendary 6 – immer der Reihe nach, pro Aftermath einmal „Fortschritt auf einem Pfad“. Es gibt 10 Pfade für Helden und 6 für andere Einheiten.',
+      'Bei jedem Rang wählst du **eine von zwei** Fähigkeiten. Die Einheit braucht die Schlüsselwörter des Pfads (z. B. INFANTERIE, ZAUBERER).',
+      '**Pfad wechseln:** Der Rang sinkt um 1' + (bw ? ', der Ruhm fällt auf das Minimum des neuen Rangs' : '') + ', und du wählst für jeden verbleibenden Rang eine Fähigkeit des neuen Pfads.',
       'Einzigartige Einheiten dürfen keinen Pfad betreten. Pfade aus dem Battletome eurer Fraktion sind ebenfalls erlaubt (in der App als „eigener Pfad“ eintragbar).',
     ], paths: true },
     { id: 'hausregeln', title: 'Hausregeln: Aufträge, Verluste & Versorgung', body: [
+      'Diese Regeln stehen nicht im Battlepack – sie gehören zu eurer Kampagne in dieser App.',
       '**Aufträge zu Beginn jeder Runde** (unter „Lage“ oder an der Einheit unter „Armee“): ⚔ Kämpfen · 😴 Erholen · ⛏ Schürfen · 🌾 Nahrung sammeln. Jede Einheit mit einem anderen Auftrag als Kämpfen ist in der Schlacht dieser Runde **gesperrt** und zählt nicht zu den Armeepunkten.',
-      '**😴 Erholen** (max. 1 Einheit pro Schlacht): heilt im Aftermath W6 Kampfwunden. Außerdem kannst du dauerhaft tote Modelle zurückholen: Pro Modell zahlst du dessen Punktwert (Punkte der Einheit ÷ Modellzahl) in ' + (packId === 'rc' ? '**Gold**' : '**GP**') + ', dann würfelst du je Modell einen W6 – bei 1 kommt es nicht zurück, bei 2+ kehrt es zurück. Bezahlt ist bezahlt.',
-      '**⛏ Schürfen:** ' + (packId === 'rc' ? 'W3 Emberstone-Splitter.' : 'W6 × 10 GP.'),
+      '**😴 Erholen** (max. 1 Einheit pro Schlacht): heilt im Aftermath W6 Kampfwunden. Außerdem kannst du dauerhaft tote Modelle zurückholen: Pro Modell zahlst du dessen Punktwert (Punkte der Einheit ÷ Modellzahl) in ' + (bw ? '**GP**' : '**Gold**') + ', dann würfelst du je Modell einen W6 – bei 1 kommt es nicht zurück, bei 2+ kehrt es zurück. Bezahlt ist bezahlt.',
+      '**⛏ Schürfen:** ' + (bw ? 'W6 × 10 GP.' : 'W3 Emberstone-Splitter.'),
       '**🌾 Nahrung sammeln:** Punktwert der Einheit × W6 × 20 % Nahrung. Bei einer 1 erleidet die Einheit 1 Kampfwunde (Unfall).',
       '**Gestorbene Modelle:** Nach jeder Schlacht würfelst du für jedes Modell, das gestorben ist (auch bei vernichteten Einheiten und Einzelmodellen), einen W6. Bei **1 ist es dauerhaft tot** und kommt nur über „Erholen“ zurück; bei 2+ ist es wieder dabei. Eine Einheit ohne lebende Modelle kann nicht kämpfen.',
-      packId === 'rc' ? '**🪙 Gold:** Nach jeder Schlacht wie Ruhmespunkte aus Blighted Wilds: geschlagen 60/110/150/180/200, großer Sieg +30/40/50/55/60, General lebt +10/15/20/25/30 (je nach Punkten der gegnerischen Armee). Gold bezahlt das Zurückholen von Modellen.' : '**Bezahlen:** Das Zurückholen von Modellen kostet GP.',
+      bw ? '**Bezahlen:** Das Zurückholen von Modellen kostet GP.' : '**🪙 Gold:** Nach jeder Schlacht wie Ruhmespunkte aus Blighted Wilds: geschlagen 60/110/150/180/200, großer Sieg +30/40/50/55/60, General lebt +10/15/20/25/30 (je nach Punkten der gegnerischen Armee). Gold bezahlt das Zurückholen von Modellen.',
       '**🍖 Nahrung:** Du startest mit so viel Nahrung wie die Startpunkte. Nach jeder Schlacht bekommst du als Beute die Punkte aller feindlichen Modelle, die du getötet hast. Dann braucht jede Einheit so viel Nahrung, wie ihre lebenden Modelle Punkte kosten – abzüglich des Anteils, den das Feld deckt, auf dem du stehst (je nach Feld 10–45 %, im Lager 25 %).',
       '**Hunger:** Reicht die Nahrung nicht, wählst du, wer nichts bekommt. Eine Einheit hält **eine Runde** Hunger aus; wird sie in der nächsten Runde wieder nicht gefüttert, **verlässt sie die Armee**.',
+      '**Karte:** Geheime gleichzeitige Züge, Paarung Alleinstehender, Gastspieler bei ungerader Zahl. Eroberte Felder sind reine Optik.',
     ] },
-    { id: 'sieg', title: 'Kampagnensieg', body: [
-      packId === 'bw'
-        ? 'Die Kampagne endet, sobald jemand einen **großen Sieg in „Be It Purity or Putrescence“** erringt. Er erhält die Blighted-Wilds-Trophäe und die Fähigkeit „Purifiers of the Blighted Wilds“ (1× pro Schlacht Heilen (3) bei jeder befreundeten Einheit).'
+    { id: 'sieg', title: 'Kampagnensieg', ref: 'Campaign-Victory', body: [
+      bw
+        ? 'Die Kampagne endet, sobald jemand einen **großen Sieg in „Be It Purity or Putrescence“** erringt. Der Sieger heilt bei jeder Einheit W6 Kampfwunden, entfernt eine Narbe und erhält die Blighted-Wilds-Trophäe mit der Fähigkeit „Purifiers of the Blighted Wilds“ (1× pro Schlacht, deine Heldenphase: Heilen (3) bei jeder befreundeten Einheit) – sie gilt auch in künftigen Kampagnen.'
         : 'Die Kampagne endet, sobald jemand einen **großen Sieg in „Raid on Hel\'s Claw“** erringt. Er erhält die Emberstone-Trophäe der Ravaged Coast.',
-      'Eroberte Felder sind in dieser Kampagne reine Optik – entscheidend sind Siege und das Finale.',
+      bw
+        ? 'Das Finale steht nur zur Wahl, wenn es beide Spieler freigeschaltet haben – über einen Concealed Trail von Vital Alignment oder Creeping Rootstalks, also nach einem Sieg mit einem dieser Schlachtpläne.'
+        : 'Hel\'s Claw wird erst gespielt, wenn beide Spieler mit einem Hateful-Shores-Schlachtplan gewonnen haben – in der App: wenn beide in derselben Runde nach Hel\'s Claw ziehen.',
+      'Ein Unentschieden im Finale beendet die Kampagne nicht – es kann erneut ausgetragen werden.',
+    ] },
+    { id: 'glossar', title: 'Begriffe aus den Grundregeln', url: CORE_RULES_URL, body: [
+      'Kurz erklärt, damit die Kurzfassungen verständlich sind. Den genauen Wortlaut findest du in den Grundregeln.',
+      '**Kontrollbereich (Combat range):** 3" um eine Einheit. Wer im Kontrollbereich eines Feindes steht, ist „im Nahkampf“.',
+      '**Kontrollwert (Control score):** Summe der Kontroll-Werte aller Modelle einer Einheit, die ein Ziel umkämpfen. Wer am Ziel den höheren Gesamtwert hat, kontrolliert es.',
+      '**Tödlicher Schaden (Mortal damage):** Schaden ohne Treffer-, Verwundungs- und Rettungswurf. Nur ein Ward-Wurf kann ihn noch abwenden.',
+      '**Ward (X+):** Für jeden Schadenspunkt ein Wurf – bei X+ wird er ignoriert.',
+      '**STRIKE-FIRST / STRIKE-LAST:** Die Einheit kämpft in der Nahkampfphase vor bzw. nach allen anderen.',
+      '**Heilen (X):** entfernt X Schadenspunkte von einer Einheit (bringt keine Modelle zurück).',
+      '**Rally (Befehl):** 6 Würfel, jede 4+ ist ein Rally-Punkt. 1 Punkt heilt 1 Schaden; für Punkte in Höhe des Lebenswerts kehrt ein gefallenes Modell zurück.',
+      '**All-out Attack / All-out Defence (Befehle):** +1 auf Trefferwürfe bzw. +1 auf Rettungswürfe für die Phase.',
+      '**Kritischer Treffer:** unmodifizierte 6 beim Treffen. **Crit (Mortal):** Schaden wird tödlicher Schaden · **Crit (Auto-wound):** verwundet automatisch · **Crit (2 Hits):** zählt als zwei Treffer.',
+      '**Anti-X (+1 Rend):** +1 Durchschlag gegen Ziele mit dem Schlüsselwort X. **Charge (+1 Damage):** +1 Schaden, wenn die Einheit in diesem Zug angegriffen hat.',
+      '**Companion:** Waffen eines Reittiers oder Begleiters – viele Boni gelten für sie nicht.',
+      '**Machtstufe (Power level):** die Zahl hinter ZAUBERER (X) bzw. PRIESTER (X) – so viele Zauber/Gebete pro Phase.',
+      '**UNLIMITED:** Diesen Zauber bzw. dieses Gebet dürfen mehrere Einheiten im selben Zug nutzen.',
+      '**Kampfwunde ≠ Schadenspunkt:** Schadenspunkte gibt es nur während der Schlacht. Kampfwunden (Battle wounds) sammelt eine Einheit über die Kampagne hinweg im Aftermath – aus ihnen entstehen Narben.',
+      '**Underdog:** der Spieler, der gerade zurückliegt (weniger Siegpunkte).',
     ] },
   ];
-  return common;
 }

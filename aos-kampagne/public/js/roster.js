@@ -1,6 +1,6 @@
 // Armee / Path-to-Glory-Roster
 import { h, toast, modal, confirmBox, select, field, badge, rich, possessive } from './ui.js';
-import { S, me, pack, playerById, unitsOf, unitPoints, unitModels, rosterPoints, generalOf, colorOf, rosterOps, store, allianceOf, factionNames, nextJobRound, setJob, unitJob, JOBS, aliveModels, fullModels } from './store.js';
+import { S, me, pack, playerById, unitsOf, unitPoints, unitModels, rosterPoints, generalOf, colorOf, rosterOps, store, allianceOf, factionNames, nextJobRound, setJob, unitJob, JOBS, aliveModels, fullModels, isUnique } from './store.js';
 import { RANKS, RANK_DE } from './packs.js';
 import { PATHS, pathById, pathsFor, RC, BW, weaponText, scarLevelFor } from './rules.js';
 
@@ -19,6 +19,9 @@ export function rosterProblems(pid) {
   const g = gens[0];
   if (g && !g.is_hero) out.push('Der General muss ein Held sein.');
   if (g && !g.path) out.push('Der General braucht einen Pfad (Rang Aspiring).');
+  if (g && g.path && !(g.data.abilities || []).filter(Boolean).length) out.push('Wähle für den General eine Aspiring-Fähigkeit (Bearbeiten → Pfad & Rang).');
+  if (g && (g.models > 1 || g.reinforced)) out.push('Der General muss ein Einzelmodell sein.');
+  if (g && g.data.ror) out.push('Eine Einheit aus einem Regiment of Renown kann nicht General sein.');
   const pts = rosterPoints(pid);
   if (!pl.roster_locked && pts > c.points_limit) out.push(`Zu viele Punkte: ${pts} / ${c.points_limit}.`);
   if (!pl.roster_locked && c.unit_limit) us.forEach(u => {
@@ -32,7 +35,36 @@ export function rosterProblems(pid) {
     if (n > max) out.push(`Regiment von ${l.name}: höchstens ${max} Einheiten (aktuell ${n}).`);
   });
   us.filter(u => !u.is_hero && !u.regiment_of && !u.auxiliary).forEach(u => out.push(`${u.name} gehört zu keinem Regiment – Regiment wählen oder als Hilfseinheit markieren.`));
-  if (!c.allow_unique) us.filter(u => (u.data.keywords || '').includes('Einzigartig')).forEach(u => out.push(`${u.name} ist einzigartig – in dieser Kampagne nicht erlaubt.`));
+  if (!c.allow_unique) us.filter(isUnique).forEach(u => out.push(`${u.name} ist einzigartig – in dieser Kampagne nicht erlaubt.`));
+  us.filter(u => isUnique(u) && (u.path || u.data.trait || u.data.artefact || u.data.weapon)).forEach(u => out.push(`${u.name} ist einzigartig und darf weder Pfad noch Verbesserungen haben.`));
+  us.filter(u => u.reinforced && (u.models <= 1 || u.data.reinforce === false)).forEach(u => out.push(`${u.name} kann nicht verstärkt werden.`));
+  // Keine Einheit hat zwei Verbesserungen derselben Art, keine Verbesserung kommt doppelt vor
+  const enh = us.flatMap(u => [u.data.trait, u.data.artefact]).filter(Boolean);
+  [...new Set(enh.filter((x, i) => enh.indexOf(x) !== i))].forEach(x => out.push(`Die Verbesserung „${x}“ kommt doppelt vor.`));
+  us.filter(u => u.data.artefact && u.data.weapon).forEach(u => out.push(`${u.name}: Eine Emberstone-Waffe zählt als Artefakt – nur eines von beiden.`));
+  if (!pl.roster_locked) {
+    // Start-Regeln des Battlepacks (gelten nur, solange das Roster noch nicht abgeschlossen ist)
+    const tome = pl.data.tome || [];
+    const n = kind => tome.filter(t => t.kind === kind).length;
+    const traits = us.filter(u => u.data.trait).length, arts = us.filter(u => u.data.artefact).length;
+    const early = us.filter(u => !u.is_general && (u.rank > 0 || u.path));
+    if (early.length) out.push(`Beim Start hat nur der General einen Pfad (betrifft: ${early.map(u => u.name).join(', ')}). Eine weitergeführte Armee trägt der Master nach dem Abschluss ein.`);
+    if (g && g.rank > 1) out.push('Der General startet auf Rang Aspiring.');
+    if (us.some(u => u.battle_wounds > 0)) out.push('Beim Start hat keine Einheit Kampfwunden.');
+    if (p.id === 'rc') {
+      if (traits || arts) out.push('Ravaged Coast: Der Start erfolgt ohne Verbesserungen – Heldeneigenschaften und Artefakte gibt es später für Splitter.');
+      if (pl.data.terrain) out.push('Ravaged Coast: Der Start erfolgt ohne Fraktionsgelände (später 3 Splitter).');
+      if (us.some(u => u.data.ror)) out.push('Ravaged Coast: Ein Regiment of Renown gibt es erst später für Splitter.');
+      if (n('Zauber') > 2) out.push('Arcane Tome beim Start: höchstens 2 Zauber (1 UNLIMITED + 1 für den ersten Zauberer).');
+      if (n('Gebet') > 2) out.push('Arcane Tome beim Start: höchstens 2 Gebete (1 UNLIMITED + 1 für den ersten Priester).');
+    } else {
+      if (traits > 1) out.push('Blighted Wilds: Beim Start gibt es genau 1 Heldeneigenschaft.');
+      if (arts > 1) out.push('Blighted Wilds: Beim Start gibt es genau 1 Artefakt.');
+      if (n('Zauber') > 3) out.push('Arcane Tome beim Start: höchstens 3 Zauber aus einer Lore.');
+      if (n('Gebet') > 3) out.push('Arcane Tome beim Start: höchstens 3 Gebete aus einer Lore.');
+    }
+  }
+  if (p.id === 'bw' && (pl.data.tome || []).filter(t => t.kind === 'Beschwörung').length > 3) out.push('Arcane Tome: höchstens 3 Beschwörungen.');
   if (us.filter(u => u.data.ror).length > 1) out.push('Höchstens ein Regiment of Renown.');
   if (p.id === 'bw' && (pl.data.tome || []).filter(t => t.kind !== 'Beschwörung').length > 6) out.push('Arcane Tome: höchstens 6 Zauber/Gebete.');
   if (p.id === 'rc' && (pl.data.tome || []).length > 6) out.push('Arcane Tome: höchstens 6 Einträge.');
@@ -88,6 +120,8 @@ export function renderRoster(pidArg) {
         if (g && g.rank < 1) ops.push({ op: 'update', id: g.id, fields: { rank: 1 } });
         await rosterOps(ops, `hat das Roster abgeschlossen (${pts} Punkte).`, pid); toast('Roster abgeschlossen!', 'ok'); window.__redraw();
       } }, '✓ Roster abschließen') : null) : null,
+    isAdmin() ? h('div.row.wrap', h('button.btn.small.ghost', { onClick: () => stockModal(pid) }, '👑 Master-Werkzeug: Vorräte anpassen'),
+      pl.roster_locked ? h('span.tiny.muted', 'Als Master kannst du jede Einheit bearbeiten, hinzufügen oder entfernen – auch nach dem Abschluss.') : null) : null,
     !pl.roster_locked && edit ? h('details.helpbox', h('summary', 'Wie baue ich mein Roster?'),
       h('ol',
         h('li', 'Füge zuerst deinen ', h('strong', 'General'), ' hinzu (ein Held, Einzelmodell) und markiere ihn als General.'),
@@ -182,6 +216,22 @@ async function addUnit(pid, cat, opts = {}) {
   await rosterOps([{ op: 'add', unit }], opts.log || `fügt ${cat.name} hinzu (${unitPoints(unit)} Pkt).`, pid);
   toast(`${cat.name} hinzugefügt.`, 'ok');
   if (window.__redraw) window.__redraw();
+}
+
+// Master: Währung und Vorräte von Hand korrigieren (z. B. nach einem korrigierten Ergebnis)
+function stockModal(pid) {
+  const p = pack(), pl = playerById(pid), c = S().campaign;
+  const num = v => h('input', { type: 'number', min: 0, value: v });
+  const vault = num(pl.vault), total = num(pl.vault_total), food = num(pl.data.food ?? c.points_limit), gold = num(pl.data.gold || 0);
+  const m = modal(`Vorräte von ${pl.name}`, h('div',
+    h('div.grid2', field(`${p.currency.name} im Vorrat`, vault), field(`${p.currency.short} insgesamt gesammelt`, total, p.id === 'rc' ? 'ab 20: Gnaw\'s Edge' : null)),
+    h('div.grid2', field('Nahrung', food), p.id === 'rc' ? field('Gold', gold) : h('div')),
+    h('p.muted.small', 'Die Änderung steht mit den neuen Werten im Verlauf.'),
+    h('button.btn', { onClick: async () => {
+      const fields = { vault: Number(vault.value) || 0, vault_total: Number(total.value) || 0, data_set: { food: Number(food.value) || 0, ...(p.id === 'rc' ? { gold: Number(gold.value) || 0 } : {}) } };
+      await rosterOps([{ op: 'player', fields }], 'korrigiert die Vorräte.', pid);
+      m.close(); toast('Vorräte angepasst.', 'ok'); window.__redraw();
+    } }, 'Speichern')));
 }
 
 function factionModal(pid) {

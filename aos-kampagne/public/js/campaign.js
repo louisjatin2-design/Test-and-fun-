@@ -1,6 +1,6 @@
 // Kampagnen-Hülle: Kopfzeile, Tabs, Lage, Rangliste, Verlauf.
 import { h, badge, toast, fmtDate, confirmBox } from './ui.js';
-import { S, me, pack, playerById, unitsOf, rosterPoints, generalOf, locName, currentMatches, myMatch, sideOf, opponentName, colorOf, api, loadState, store, nextJobRound, unitJob, JOBS, livePoints } from './store.js';
+import { S, me, pack, playerById, unitsOf, rosterPoints, generalOf, locName, currentMatches, myMatch, sideOf, opponentName, colorOf, api, loadState, store, setAdminCid, nextJobRound, unitJob, JOBS, livePoints } from './store.js';
 import { jobSelect } from './roster.js';
 import { foodFactor } from './packs.js';
 import { RANKS } from './packs.js';
@@ -23,7 +23,7 @@ export function renderCampaign(tab, rest, nav) {
       mine ? h('span.vault', { title: p.currency.name }, `${p.currency.icon} ${mine.vault} ${p.currency.short}`) : null,
       mine ? h('span.vault.food', { title: 'Nahrung' }, `🍖 ${mine.data.food ?? S().campaign.points_limit}`) : null,
       mine && p.id === 'rc' ? h('span.vault.gold', { title: 'Gold' }, `🪙 ${mine.data.gold || 0}`) : null,
-      st.me.admin && store.adminCid ? h('a.btn.small', { href: '#/master', onClick: () => { store.adminCid = null; } }, '👑') : null,
+      st.me.admin && store.adminCid ? h('a.btn.small', { href: '#/master', title: 'Zurück zum Master-Bereich', onClick: () => { setAdminCid(null); } }, '👑') : null,
       mine ? h('button.btn.ghost.small', { onClick: nav.logout, title: 'Abmelden' }, '⎋') : null));
   const tabs = h('nav.tabs', TABS.map(([id, icon, label]) => h('a.tab' + (id === tab || (tab === 'spiel' && id === 'spiele') || (tab === 'aftermath' && id === 'spiele') ? '.active' : ''), { href: '#/c/' + id }, h('span.tab-icon', icon), h('span.tab-label', label))));
   let body;
@@ -35,7 +35,7 @@ export function renderCampaign(tab, rest, nav) {
     case 'aftermath': body = renderAftermath(rest[0]); break;
     case 'rangliste': body = renderRanking(); break;
     case 'verlauf': body = renderLog(); break;
-    case 'regeln': body = renderRulebook(c.pack, false); break;
+    case 'regeln': body = renderRulebook(c.pack, false, rest[0]); break;
     default: body = renderLage(nav);
   }
   return h('div.camp-shell', head, tabs, h('main.page', body));
@@ -44,7 +44,7 @@ export function renderCampaign(tab, rest, nav) {
 function renderLage(nav) {
   const st = S(), c = st.campaign, p = pack(), mine = me();
   const cards = [];
-  if (st.me.admin && !mine) cards.push(h('div.card.info', h('strong', '👑 Master-Ansicht'), ' – du siehst diese Kampagne als Master. Spielerdaten änderst du im Master-Bereich oder über „Armee“.'));
+  if (st.me.admin && !mine) cards.push(h('div.card.info', h('strong', '👑 Master-Ansicht'), ' – du siehst diese Kampagne als Master. Roster und Vorräte änderst du über „Armee“, Ergebnisse über „Spiele“, alles Weitere im Master-Bereich.'));
   if (c.phase === 'finished') {
     const w = playerById(c.winner_player_id);
     cards.push(h('div.card.victory', h('div.trophy', '🏆'), h('h2', w ? `${w.name} hat die Kampagne gewonnen!` : 'Die Kampagne ist beendet.'),
@@ -67,6 +67,7 @@ function renderLage(nav) {
         await api('start', {}); toast('Die Kampagne beginnt!', 'ok'); await loadState(true); nav.go('#/c/karte');
       } }, '▶ Kampagne starten')));
   }
+  if (c.phase === 'resolving') cards.push(h('div.card.highlight', h('h2', 'Die Züge werden aufgedeckt…'), h('p.muted', 'Einen Moment – gleich stehen die Begegnungen fest. Bleibt diese Meldung länger stehen, kann der Master die Züge im Master-Bereich neu aufdecken.')));
   if (c.phase === 'move') {
     const moved = st.players.filter(x => x.moved).length;
     cards.push(h('div.card.highlight',
@@ -79,7 +80,7 @@ function renderLage(nav) {
       h('p.muted.small', `${moved} von ${st.players.length} haben gezogen.`)));
   }
   if (c.phase === 'battle') {
-    const m = myMatch();
+    const m = mine ? myMatch() : null;
     if (m) {
       const side = sideOf(m, mine.id);
       const done = side === 'a' ? m.done_a : m.done_b;
@@ -87,10 +88,11 @@ function renderLage(nav) {
         h('h2', `Deine Begegnung in Runde ${c.current_round}`),
         h('p.big', `Gegen ${opponentName(m, side)} · ${m.battleplan || 'Schlachtplan noch offen'}`),
         h('p.muted', m.kind === 'pvp' ? `Ihr trefft auf ${locName(m.location_a)} aufeinander.` : m.kind === 'pair' ? 'Ihr standet beide allein und werdet gegeneinander gepaart.' : 'Du stehst allein – du spielst gegen einen Gastspieler (eine außenstehende Person).'),
-        m.status !== 'done' ? h('a.btn.big', { href: '#/c/spiel/' + m.id }, 'Zum Spiel: Aufstellung & Ergebnis →')
-          : done ? h('p', badge('Aftermath erledigt', 'ok'), ' – warte auf die anderen.')
-            : h('a.btn.big', { href: '#/c/aftermath/' + m.id }, 'Aftermath starten →')));
-    }
+        m.result === 'void' ? h('p', badge('annulliert', 'warn'), ' – dieses Spiel zählt nicht.')
+          : m.status !== 'done' ? h('a.btn.big', { href: '#/c/spiel/' + m.id }, 'Zum Spiel: Aufstellung & Ergebnis →')
+            : done ? h('p', badge('Aftermath erledigt', 'ok'), ' – warte auf die anderen.')
+              : h('a.btn.big', { href: '#/c/aftermath/' + m.id }, 'Aftermath starten →')));
+    } else if (mine) cards.push(h('div.card.info', 'Du hast in dieser Runde keine Begegnung.'));
     cards.push(h('div.card', h('h3', 'Alle Begegnungen dieser Runde'), matchList(currentMatches())));
   }
   if (mine && c.phase !== 'finished') {
@@ -114,14 +116,14 @@ export function matchList(ms) {
   if (!ms.length) return h('p.muted', 'Keine Spiele.');
   return h('div.match-list', ms.map(m => {
     const a = playerById(m.player_a), b = m.player_b ? playerById(m.player_b) : null;
-    const res = m.result === 'a' || m.result === 'a_minor' ? (a && a.name) : m.result === 'b' || m.result === 'b_minor' ? (b ? b.name : m.guest_name) : m.result === 'draw' ? 'Unentschieden' : null;
+    const res = m.result === 'a' || m.result === 'a_minor' ? (a ? a.name : '(entfernt)') : m.result === 'b' || m.result === 'b_minor' ? (b ? b.name : m.guest_name || '(entfernt)') : m.result === 'draw' ? 'Unentschieden' : null;
     return h('a.match-row', { href: '#/c/spiel/' + m.id },
       h('span.dot', { style: { background: a ? colorOf(a.id) : '#777' } }), h('strong', a ? a.name : '?'), ' vs ',
       b ? h('span.dot', { style: { background: colorOf(b.id) } }) : null, h('strong', b ? b.name : (m.guest_name || 'Gastspieler')),
       h('span.muted', ' · ' + (m.battleplan || 'Schlachtplan offen')),
       h('span.grow'),
-      m.status === 'done' ? badge(res ? (res === 'Unentschieden' ? res : 'Sieg: ' + res) : 'erledigt', 'ok') : badge('offen'),
-      m.status === 'done' ? badge(`Aftermath ${(m.done_a ? 1 : 0) + (m.player_b && m.done_b ? 1 : 0)}/${m.player_b ? 2 : 1}`) : null);
+      m.result === 'void' ? badge('annulliert', 'warn') : m.status === 'done' ? badge(res ? (res === 'Unentschieden' ? res : 'Sieg: ' + res) : 'erledigt', 'ok') : badge('offen'),
+      m.status === 'done' && m.result !== 'void' ? badge(`Aftermath ${(m.done_a ? 1 : 0) + (m.player_b && m.done_b ? 1 : 0)}/${m.player_b ? 2 : 1}`) : null);
   }));
 }
 

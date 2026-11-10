@@ -284,3 +284,17 @@ details > summary { cursor: pointer; }
 .job-sel { width: auto; padding: 4px 8px; font-size: .85rem; }
 .vault.food { color: #f2cf73; } .vault.gold { color: #ffd27a; }
 @media (max-width: 720px) { .vault.food, .vault.gold { display: none; } }
+
+/* ---------- Ergänzungen: Regel-Links, breite Tabellen, laufende Aktionen ---------- */
+.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.scroll-x > table { min-width: 100%; }
+a.ext { white-space: nowrap; }
+.rule-link { white-space: nowrap; flex: none; }
+.rule-modal p { margin: .5em 0; line-height: 1.5; }
+.search-count { margin: 6px 0 0; min-height: 1.2em; }
+.rule-sec .src { margin-top: 10px; }
+.btn.busy, button.busy { opacity: .6; cursor: progress; }
+.btn:disabled { cursor: not-allowed; }
+.dice-val.rolled { font-weight: 700; }
+.helpbox ol { margin: 8px 0 4px; padding-left: 1.3em; }
+.helpbox li { margin: 4px 0; }
