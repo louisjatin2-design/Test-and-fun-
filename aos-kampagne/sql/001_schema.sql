@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS campaigns (
   phase TEXT NOT NULL DEFAULT 'lobby',
   winner_player_id TEXT,
   version INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now')),
+  options TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -126,6 +127,19 @@ CREATE TABLE IF NOT EXISTS events (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key TEXT PRIMARY KEY,
+  count INTEGER NOT NULL DEFAULT 0,
+  window_start INTEGER NOT NULL DEFAULT 0,
+  blocked_until INTEGER NOT NULL DEFAULT 0,
+  strikes INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_players_campaign ON players(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_units_player ON roster_units(player_id);
 CREATE INDEX IF NOT EXISTS idx_units_campaign ON roster_units(campaign_id);
@@ -133,3 +147,4 @@ CREATE INDEX IF NOT EXISTS idx_locations_campaign ON locations(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_matches_campaign ON matches(campaign_id, round);
 CREATE INDEX IF NOT EXISTS idx_events_campaign ON events(campaign_id, id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_player ON sessions(player_id);

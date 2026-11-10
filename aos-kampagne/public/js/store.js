@@ -1,8 +1,15 @@
 // Zentrale Daten: API-Aufrufe, Kampagnenstand, Einheitenkatalog, abgeleitete Werte.
 import { toast } from './ui.js';
 import { packOf } from './packs.js';
+import * as core from './core.js';
 
-export const store = { status: null, state: null, catalog: null, adminCid: null, listeners: new Set() };
+// Der Master öffnet Kampagnen über ihre ID; sie wird für diesen Tab gemerkt, damit ein Neuladen nicht hinauswirft.
+const remembered = () => { try { return sessionStorage.getItem('adminCid') || null; } catch { return null; } };
+export const store = { status: null, state: null, catalog: null, adminCid: remembered(), listeners: new Set() };
+export function setAdminCid(cid) {
+  store.adminCid = cid || null;
+  try { if (cid) sessionStorage.setItem('adminCid', cid); else sessionStorage.removeItem('adminCid'); } catch { /* egal */ }
+}
 
 export async function api(path, body, { quiet } = {}) {
   const cid = store.adminCid && !path.startsWith('admin') && !path.startsWith('lobby') ? (path.includes('?') ? '&' : '?') + 'cid=' + store.adminCid : '';
@@ -52,8 +59,10 @@ export const pack = () => packOf(S().campaign.pack);
 export const me = () => S() && S().players.find(p => p.id === S().me.player_id);
 export const playerById = id => S().players.find(p => p.id === id);
 export const unitsOf = pid => S().units.filter(u => u.player_id === pid);
-export const unitPoints = u => (u.points || 0) * (u.reinforced ? 2 : 1);
-export const unitModels = u => (u.models || 1) * (u.reinforced ? 2 : 1);
+export const { unitPoints, fullModels, aliveModels, perModel, livePoints, unitJob, unitStatus, plays, isUnique } = core;
+export const unitModels = core.fullModels;
+// Armeepunkte einer Seite in einem Spiel (nach dem Ergebnis: der dabei festgehaltene Stand)
+export const armyPoints = (m, side, rep) => core.armyPoints(m, side, S().units, rep);
 export const rosterPoints = pid => unitsOf(pid).reduce((a, u) => a + unitPoints(u), 0);
 export const generalOf = pid => unitsOf(pid).find(u => u.is_general);
 export const locByKey = key => S().locations.find(l => l.key === key);
@@ -61,7 +70,8 @@ export const locName = key => key ? (locByKey(key) || { name: key }).name : 'Lag
 export const currentMatches = () => S().matches.filter(m => m.round === S().campaign.current_round);
 export function myMatch() {
   const id = S().me.player_id;
-  return currentMatches().find(m => m.player_a === id || m.player_b === id);
+  if (!id) return null; // Master-Ansicht: kein eigenes Spiel
+  return currentMatches().find(m => m.player_a === id || m.player_b === id) || null;
 }
 export const sideOf = (m, pid) => m.player_a === pid ? 'a' : m.player_b === pid ? 'b' : null;
 export const opponentName = (m, side) => side === 'a' ? (m.player_b ? playerById(m.player_b)?.name : m.guest_name || 'Gastspieler') : playerById(m.player_a)?.name;
@@ -75,33 +85,13 @@ export async function rosterOps(ops, log, playerId) {
 }
 export async function logDice(text) { try { await api('dice', { text }); } catch { /* egal */ } }
 
-// ---------- Modelle, Aufträge, Versorgung (Hausregeln) ----------
-export const fullModels = u => (u.models || 1) * (u.reinforced ? 2 : 1);
-export const aliveModels = u => Math.max(0, fullModels(u) - ((u.data && u.data.lost) || 0));
-export const perModel = u => Math.round((u.points || 0) / (u.models || 1));
-// Punktwert der noch lebenden Modelle (für Armeepunkte in der Schlacht und Nahrungsbedarf)
-export const livePoints = u => fullModels(u) > 1 ? Math.round(unitPoints(u) * aliveModels(u) / fullModels(u)) : unitPoints(u);
+// ---------- Aufträge & Versorgung (Hausregeln) ----------
 export const JOBS = {
   fight: { label: 'Kämpfen', icon: '⚔' },
   rest: { label: 'Erholen', icon: '😴' },
   mine: { label: 'Schürfen', icon: '⛏' },
   forage: { label: 'Nahrung sammeln', icon: '🌾' },
 };
-export function unitJob(u, round) {
-  const d = u.data || {};
-  if (d.job && d.job.round === round) return d.job.type;
-  if (d.rest_round === round) return 'rest';
-  return 'fight';
-}
-// Status einer Einheit in einem Spiel: field | reserve | rest | mine | forage | out
-export function unitStatus(m, u, rep) {
-  const job = unitJob(u, m.round);
-  if (job !== 'fight') return job;
-  if (aliveModels(u) <= 0) return 'out';
-  const r = ((rep || m.report || {}).units || {})[u.id];
-  return r && r.status === 'reserve' ? 'reserve' : 'field';
-}
-export const plays = st => st === 'field' || st === 'reserve';
 // Für welche Runde gilt ein jetzt gesetzter Auftrag?
 export function nextJobRound(pid) {
   const st = S(), c = st.campaign;

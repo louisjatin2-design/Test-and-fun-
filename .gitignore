@@ -29,3 +29,7 @@ aos-kampagne/wrangler.toml
 aos-kampagne/node_modules/
 
 .wrangler/
+
+# Browser-Tests: Bildschirmfotos
+aos-kampagne/tests/browser/bilder/
+node_modules/

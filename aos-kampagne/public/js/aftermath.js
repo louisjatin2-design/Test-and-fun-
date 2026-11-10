@@ -1,10 +1,11 @@
 // Aftermath-Assistent (Ravaged Coast & Blighted Wilds)
-import { h, toast, modal, confirmBox, select, field, badge, diceInput, rollExpr, rollDie, rich } from './ui.js';
-import { S, me, pack, playerById, unitsOf, unitPoints, generalOf, colorOf, api, loadState, rosterOps, logDice, allianceOf, unitStatus, unitJob, JOBS, livePoints, perModel, fullModels, aliveModels, plays } from './store.js';
-import { RANKS, foodFactor } from './packs.js';
+import { h, toast, modal, confirmBox, select, field, badge, diceInput, rollDie } from './ui.js';
+import { S, me, pack, playerById, unitsOf, unitPoints, generalOf, colorOf, api, loadState, rosterOps, logDice, allianceOf, unitStatus, unitJob, JOBS, livePoints, perModel, fullModels, aliveModels, plays, armyPoints, isUnique } from './store.js';
+import { RANKS, foodFactor, isFinal } from './packs.js';
 import { RC, BW, pathsFor, pathById, scarLevelFor, scarTable, rollOnRange, SCAR_LEVELS, forgeApply, weaponText } from './rules.js';
 import { pickUnit, editUnit } from './roster.js';
 import { resultText } from './match.js';
+import { ruleLink } from './rulebook.js';
 
 let ctx = null; // { m, side, pid, state }
 
@@ -15,13 +16,17 @@ export function renderAftermath(idWithQuery) {
   if (!m) return h('p.muted', 'Spiel nicht gefunden.');
   let side = mine ? (m.player_a === mine.id ? 'a' : m.player_b === mine.id ? 'b' : null) : null;
   const qs = new URLSearchParams(q || location.hash.split('?')[1] || '');
-  if (st.me.admin && qs.get('side')) side = qs.get('side');
+  if (st.me.admin && ['a', 'b'].includes(qs.get('side'))) side = qs.get('side');
   if (!side) return h('div.card', h('p', 'Das ist nicht dein Spiel.'));
+  if (m.result === 'void') return h('div.card', h('p', 'Dieses Spiel wurde annulliert – es gibt keinen Aftermath.'), h('a.btn', { href: '#/c/lage' }, 'Zur Lage'));
   if (m.status !== 'done') return h('div.card', h('p', 'Erst das Ergebnis eintragen.'), h('a.btn', { href: '#/c/spiel/' + m.id }, 'Zum Spiel'));
   const pid = side === 'a' ? m.player_a : m.player_b;
+  const player = pid ? playerById(pid) : null;
+  if (!player) return h('div.card', h('p', 'Für diese Seite gibt es keinen Aftermath (Gastspieler oder entfernter Spieler).'), h('a.btn', { href: '#/c/spiel/' + m.id }, 'Zum Spiel'));
   const saved = side === 'a' ? m.aftermath_a : m.aftermath_b;
   const done = side === 'a' ? m.done_a : m.done_b;
   const state = JSON.parse(JSON.stringify(saved && saved.step ? saved : { step: 1, s1: {}, s2: {}, s3: { used: {} }, s4: {} }));
+  state.s1 = state.s1 || {}; state.s2 = state.s2 || {}; state.s4 = state.s4 || {};
   state.s3 = state.s3 || { used: {} }; state.s3.used = state.s3.used || {};
   ctx = { m, side, pid, state, done };
   const p = pack();
@@ -31,15 +36,14 @@ export function renderAftermath(idWithQuery) {
   const LAST = steps.length;
   const cur = Math.min(Math.max(1, state.step || 1), LAST);
   const stepper = h('ol.stepper', steps.map(([t], i) => h('li' + (i + 1 === cur ? '.active' : i + 1 < cur ? '.done' : ''), { onClick: () => goStep(i + 1) }, h('span', i + 1), t)));
-  const pl = playerById(pid);
   const body = done ? h('div.card', h('p', badge('Aftermath abgeschlossen', 'ok')), h('p.muted', 'Änderungen am Roster gehen weiterhin über „Armee → Bearbeiten“.')) : steps[cur - 1][1]();
   return h('div.stack', { 'data-keep': '1' },
     h('a.back', { href: '#/c/spiel/' + m.id }, '← Zum Spiel'),
     h('div.card.aft-head',
-      h('h2', '🔥 Aftermath'),
-      h('p', h('span.dot', { style: { background: colorOf(pid) } }), h('strong', pl.name), ` · ${resultText(m)} · ${m.battleplan || ''}`),
-      h('p.vault-line', `${p.currency.icon} Im Vorrat: `, h('strong', pl.vault + ' ' + p.currency.short), ` · insgesamt gesammelt: ${pl.vault_total}`,
-        ` · 🍖 Nahrung: `, h('strong', String(pl.data.food ?? S().campaign.points_limit)), p.id === 'rc' ? [` · 🪙 Gold: `, h('strong', String(pl.data.gold || 0))] : null)),
+      h('div.row.between', h('h2', '🔥 Aftermath'), ruleLink(cur >= 4 ? (cur === 5 ? 'hausregeln' : 'wunden') : 'aftermath', 'Regeln dazu')),
+      h('p', h('span.dot', { style: { background: colorOf(pid) } }), h('strong', player.name), ` · ${resultText(m)} · ${m.battleplan || ''}`),
+      h('p.vault-line', `${p.currency.icon} Im Vorrat: `, h('strong', player.vault + ' ' + p.currency.short), ` · insgesamt gesammelt: ${player.vault_total}`,
+        ` · 🍖 Nahrung: `, h('strong', String(player.data.food ?? S().campaign.points_limit)), p.id === 'rc' ? [` · 🪙 Gold: `, h('strong', String(player.data.gold || 0))] : null)),
     done ? null : stepper,
     body,
     done ? null : h('div.row.between',
@@ -54,10 +58,19 @@ async function saveState(done = false) {
 }
 async function goStep(n) { ctx.state.step = n; await saveState(); redraw(); }
 const redraw = () => window.__redraw && window.__redraw();
+// Einheiten, die nach dem Anwenden der Kampfwunden noch eine Narbe auswürfeln müssen bzw. ihren Wunden erliegen
+const pendingScars = () => myUnits().filter(u => { const lvl = scarLevelFor(u.battle_wounds); return lvl && lvl !== 'dead' && !(u.data.scars || {})[lvl]; });
+const dying = () => myUnits().filter(u => scarLevelFor(u.battle_wounds) === 'dead');
 async function finish() {
-  const s4 = ctx.state.s4 || {}, s5 = ctx.state.s5 || {};
-  if (!s4.wounds_applied && !(await confirmBox('Die Kampfwunden wurden noch nicht angewendet. Trotzdem abschließen?', 'Abschließen'))) return;
-  if (!s5.fed && !(await confirmBox('Die Versorgung (Nahrung) wurde noch nicht abgerechnet. Trotzdem abschließen?', 'Abschließen'))) return;
+  const st = ctx.state, s1 = st.s1 || {}, s2 = st.s2 || {}, s4 = st.s4 || {}, s5 = st.s5 || {};
+  const bw = pack().id === 'bw';
+  const ask = text => confirmBox(text + ' Trotzdem abschließen?', 'Abschließen');
+  if (!s1.applied && !(await ask(bw ? 'Die Ruhmespunkte (Schritt 1) wurden noch nicht gutgeschrieben.' : 'Die Emberstone-Splitter (Schritt 1) wurden noch nicht gutgeschrieben.'))) return;
+  if (bw && !s2.applied && !(await ask('Der Ruhm (Schritt 2) wurde noch nicht verteilt.'))) return;
+  if (!s4.wounds_applied && !(await ask('Die Kampfwunden (Schritt 4) wurden noch nicht angewendet.'))) return;
+  if (s4.wounds_applied && dying().length) return toast(`${dying().map(u => u.name).join(', ')}: 18 oder mehr Kampfwunden – bitte in Schritt 4 vom Roster streichen.`, 'error');
+  if (s4.wounds_applied && pendingScars().length) return toast(`Für ${pendingScars().map(u => u.name).join(', ')} muss in Schritt 4 noch eine Narbe ausgewürfelt werden.`, 'error');
+  if (!s5.fed && !(await ask('Die Versorgung (Nahrung, Schritt 5) wurde noch nicht abgerechnet.'))) return;
   await saveState(true); toast('Aftermath abgeschlossen!', 'ok'); location.hash = '#/c/lage';
 }
 const myUnits = () => unitsOf(ctx.pid);
@@ -65,10 +78,17 @@ const rep = () => ctx.m.report || { units: {} };
 const repU = id => {
   const r = (rep().units || {})[id] || {};
   const u = S().units.find(x => x.id === id);
-  return { ...r, status: u ? unitStatus(ctx.m, u) : (r.status || 'field') };
+  return { ...r, status: u ? unitStatus(ctx.m, u) : 'absent' };
 };
+// Hat die Einheit in dieser Schlacht mitgekämpft? (Stand beim Eintragen des Ergebnisses)
+const tookPart = u => plays(repU(u.id).status);
 // Gestorbene Modelle dieser Schlacht (vor dem Dauerhaft-Wurf)
-const casualties = u => { const r = repU(u.id); if (!plays(r.status) && r.status !== 'field') return 0; if (r.untimely) return 0; return r.destroyed ? (r.alive_at_battle ?? aliveModels(u)) : (r.lost || 0); };
+const casualties = u => {
+  const r = repU(u.id);
+  if (!plays(r.status) || r.untimely) return 0;
+  const alive = r.alive_at_battle ?? aliveModels(u);
+  return r.destroyed ? alive : Math.min(alive, r.lost || 0);
+};
 const won = () => ctx.m.result && ctx.m.result.startsWith(ctx.side);
 const lost = () => ctx.m.result && ctx.m.result !== 'draw' && ctx.m.result !== 'void' && !ctx.m.result.startsWith(ctx.side);
 const isMajor = () => ctx.m.result === 'a' || ctx.m.result === 'b';
@@ -76,6 +96,9 @@ const pl = () => playerById(ctx.pid);
 const cur = () => pack().currency.short;
 async function ops(list, log) { await rosterOps(list, log, ctx.pid); }
 const doneBox = text => h('div.done-box', '✓ ', text);
+// Aftermath-Stand der Gegenseite (für Belohnungen, die sich beide Spieler teilen)
+const otherState = () => (ctx.side === 'a' ? ctx.m.aftermath_b : ctx.m.aftermath_a) || {};
+const otherPlayer = () => { const id = ctx.side === 'a' ? ctx.m.player_b : ctx.m.player_a; return id ? playerById(id) : null; };
 
 // ===================== Ravaged Coast =====================
 function rcStep1() {
@@ -130,7 +153,7 @@ function rcStep3() {
           mm.close(); markUsed('terrain', nm.value);
         } }, 'Kaufen (3)')));
       }),
-      card('weapon', 'Emberstone-Waffe schmieden', '2 (+1 je Zusatzwurf)', 'Instabile Waffe für einen Helden ohne Artefakt – zählt als Artefakt.', () => forgeAction(markUsed)),
+      card('weapon', s.forge ? '🔥 Schmiede läuft – weitermachen' : 'Emberstone-Waffe schmieden', '2 (+1 je Zusatzwurf)', s.forge ? 'Du hast schon bezahlt und gewürfelt. Öffne die Schmiede, um weiterzuwürfeln oder die Waffe zu übergeben.' : 'Instabile Waffe für einen Helden ohne Artefakt – zählt als Artefakt.', () => forgeAction(markUsed)),
       card('ror', 'Regiment of Renown anheuern', '2', 'Einen der vier Ravaged-Coast-Spezialisten (je nach Großer Allianz).', () => rorAction(markUsed))),
     h('div.card',
       h('h3', 'Instabile Emberstone-Waffen'),
@@ -145,7 +168,8 @@ function rcStep3() {
 }
 
 function pathAction(markUsed) {
-  const p = pack(), us = myUnits().filter(u => !(u.data.keywords || '').includes('Einzigartig') && u.rank < 4);
+  const p = pack(), us = myUnits().filter(u => !isUnique(u) && u.rank < 4);
+  if (!us.length) return toast('Keine Einheit kann einen Rang aufsteigen.', 'error');
   const uSel = select(us.map(u => [u.id, `${u.name} (${RANKS[u.rank]}${u.path ? ', ' + (pathById(u.path)?.de || u.path) : ''})`]), us[0]?.id);
   const box = h('div');
   const draw = () => {
@@ -179,7 +203,8 @@ function pathAction(markUsed) {
 }
 
 function enhancementAction(cost, markUsed, free) {
-  const p = pack(), us = myUnits().filter(u => !(u.data.keywords || '').includes('Einzigartig'));
+  const p = pack(), us = myUnits().filter(u => !isUnique(u));
+  if (!us.length) return toast('Keine passende Einheit (einzigartige Einheiten bekommen keine Verbesserungen).', 'error');
   const ench = p.id === 'bw' ? BW.enhancements : RC.enhancements;
   const uSel = select(us.map(u => [u.id, u.name + (u.is_hero ? ' ★' : '')]), us.find(u => u.is_hero)?.id);
   const type = select([['trait', 'Heldeneigenschaft'], ['artefact', 'Artefakt der Macht']], 'trait');
@@ -254,52 +279,67 @@ function recruitAction(markUsed) {
 }
 
 function forgeAction(markUsed) {
-  const heroes = myUnits().filter(u => u.is_hero && !u.data.artefact && !u.data.weapon && !(u.data.keywords || '').includes('Einzigartig'));
-  if (!heroes.length) return toast('Kein Held ohne Artefakt verfügbar.', 'error');
-  if (pl().vault < RC.weaponCost) return toast('Nicht genug Splitter (2 nötig).', 'error');
+  const s3 = ctx.state.s3;
+  // Läuft schon eine Schmiede (bezahlt, aber noch nicht übergeben)? Dann dort weitermachen.
+  let f = s3.forge || null;
+  const heroes = myUnits().filter(u => u.is_hero && !u.data.artefact && !u.data.weapon && !isUnique(u) && !u.data.ror);
+  if (!f && !heroes.length) return toast('Kein Held ohne Artefakt verfügbar.', 'error');
+  if (!f && pl().vault < RC.weaponCost) return toast('Nicht genug Splitter (2 nötig).', 'error');
   const hasRor = myUnits().some(u => u.data.ror);
-  const hSel = select(heroes.map(u => [u.id, u.name]), heroes[0].id);
-  const type = select([['melee', 'Nahkampfwaffe'], ['ranged', 'Fernkampfwaffe']], 'melee');
-  const name = h('input', { placeholder: 'Name der Waffe (optional)' });
-  let weapon = null, rolls = [], extraPaid = 0, rerollUsed = false;
+  const candidates = f ? myUnits().filter(u => u.id === f.hero || heroes.includes(u)) : heroes;
+  const hSel = select(candidates.map(u => [u.id, u.name]), f ? f.hero : candidates[0].id);
+  const type = select([['melee', 'Nahkampfwaffe'], ['ranged', 'Fernkampfwaffe']], f ? f.type : 'melee');
+  const name = h('input', { placeholder: 'Name der Waffe (optional)', maxlength: 60, value: f ? f.name || '' : '' });
   const out = h('div.forge');
+  const persist = async () => { s3.forge = f; await saveState(); };
   const draw = () => {
-    out.replaceChildren(
-      weapon ? h('p.weapon', '🔥 ', weaponText(weapon)) : null,
-      rolls.length ? h('ol.small', rolls.map(r => h('li', `Wurf ${r.c1}/${r.c2}: ${r.text}`))) : null);
+    out.replaceChildren(...[
+      f && f.weapon ? h('p.weapon', '🔥 ', weaponText(f.weapon)) : null,
+      f && f.rolls.length ? h('ol.small', f.rolls.map(r => h('li', `Wurf ${r.c1}/${r.c2}: ${r.text}`))) : null].filter(Boolean));
+    start.style.display = f ? 'none' : '';
+    controls.style.display = f ? '' : 'none';
+    type.disabled = !!f;
+    reroll.style.display = hasRor && f && !f.rerollUsed && f.rolls.length ? '' : 'none';
   };
-  const doRoll = () => { const c1 = rollDie(6), c2 = rollDie(6); const r = forgeApply(weapon, c1, c2); weapon = r.weapon; rolls.push({ c1, c2, text: r.text }); logDice(`Schmiedewurf ${c1}/${c2}: ${r.text}`); draw(); };
+  const doRoll = () => { const c1 = rollDie(6), c2 = rollDie(6); const r = forgeApply(f.weapon, c1, c2); f.weapon = r.weapon; f.rolls.push({ c1, c2, text: r.text }); logDice(`Schmiedewurf ${c1}/${c2}: ${r.text}`); };
   const start = h('button.btn', { onClick: async () => {
-    weapon = JSON.parse(JSON.stringify(RC.forge.base[type.value]));
     await ops([{ op: 'player', fields: { vault_delta: -RC.weaponCost } }], 'zahlt 2 Splitter für eine Emberstone-Waffe.');
+    f = { hero: hSel.value, type: type.value, name: name.value, weapon: JSON.parse(JSON.stringify(RC.forge.base[type.value])), rolls: [], rerollUsed: false };
     doRoll(); doRoll();
-    start.remove(); type.disabled = true; hSel.disabled = true; controls.style.display = '';
+    await persist(); draw();
   } }, 'Schmieden (2 Splitter, 2 Schmiedewürfe)');
   const extra = h('input', { type: 'number', min: 0, value: 0, style: { width: '5em' } });
-  const controls = h('div.row.wrap', { style: { display: 'none' } },
-    h('span', 'Zusätzliche Würfe (je 1 Splitter, vorher festlegen):'), extra,
+  const reroll = h('button.btn.small.ghost', { onClick: async () => {
+    if (f.rerollUsed || !f.rolls.length) return;
+    // Letzten Wurf rückgängig machen: Waffe aus allen Würfen außer dem letzten neu aufbauen
+    const keep = f.rolls.slice(0, -1); let w = JSON.parse(JSON.stringify(RC.forge.base[f.type]));
+    keep.forEach(r => { w = forgeApply(w, r.c1, r.c2).weapon; });
+    f.weapon = w; f.rolls = keep; f.rerollUsed = true; doRoll();
+    await persist(); draw();
+  } }, '↻ Letzten Wurf wiederholen (Regiment of Renown)');
+  const controls = h('div.row.wrap',
+    h('span', 'Zusätzliche Würfe (je 1 Splitter, Anzahl vorher festlegen):'), extra,
     h('button.btn.small', { onClick: async () => {
-      const n = Number(extra.value) || 0; if (n < 1) return;
+      const n = Math.floor(Number(extra.value) || 0); if (n < 1) return;
       if (pl().vault < n) return toast('Nicht genug Splitter.', 'error');
       await ops([{ op: 'player', fields: { vault_delta: -n } }], `zahlt ${n} Splitter für zusätzliche Schmiedewürfe.`);
-      for (let i = 0; i < n; i++) doRoll(); extraPaid += n; extra.value = 0;
+      for (let i = 0; i < n; i++) doRoll(); extra.value = 0;
+      await persist(); draw();
     } }, 'Würfeln'),
-    hasRor ? h('button.btn.small.ghost', { onClick: () => {
-      if (rerollUsed || !rolls.length) return;
-      // Letzten Wurf rückgängig machen: Waffe aus allen Würfen außer dem letzten neu aufbauen
-      const keep = rolls.slice(0, -1); let w = JSON.parse(JSON.stringify(RC.forge.base[type.value]));
-      keep.forEach(r => { w = forgeApply(w, r.c1, r.c2).weapon; });
-      weapon = w; rolls = keep; rerollUsed = true; doRoll();
-    } }, '↻ Letzten Wurf wiederholen (Regiment of Renown)') : null,
+    reroll,
     h('button.btn.good', { onClick: async () => {
-      const u = heroes.find(x => x.id === hSel.value);
-      weapon.name = name.value || (weapon.type === 'ranged' ? 'Emberstone-Fernkampfwaffe' : 'Emberstone-Nahkampfwaffe');
+      const u = myUnits().find(x => x.id === hSel.value);
+      if (!u || u.data.artefact || u.data.weapon) return toast('Dieser Held hat schon ein Artefakt.', 'error');
+      const weapon = { ...f.weapon, name: name.value || (f.type === 'ranged' ? 'Emberstone-Fernkampfwaffe' : 'Emberstone-Nahkampfwaffe') };
       await ops([{ op: 'update', id: u.id, data: { weapon } }], `${u.name} erhält ${weapon.name}: ${weaponText(weapon)}.`);
-      ctx.state.s3.forged = [...(ctx.state.s3.forged || []), u.id];
+      s3.forged = [...(s3.forged || []), u.id];
+      s3.forge = null; f = null;
       mm.close(); markUsed('weapon', `${weapon.name} für ${u.name}`);
     } }, 'Waffe übergeben'));
   const mm = modal('Die Emberstone-Schmiede', h('div.stack', field('Held', hSel), field('Waffentyp', type), field('Name', name), start, controls, out,
-    h('details', h('summary', 'Schmiede-Tabelle'), h('p.small', 'Erster W6 = Spalte, zweiter W6 = Zeile. Maximal 30" Reichweite, 2+ Treffen/Verwunden, Durchschlag 4, Schaden W3+4 – Überschreitungen zählen als Fehlschlag. Treffen/Verwunden nie schlechter als 6+.'))), { wide: true });
+    h('p.tiny.muted', 'Du kannst das Fenster schließen und später weitermachen – die geschmiedete Waffe geht nicht verloren.'),
+    h('details', h('summary', 'Schmiede-Regeln'), h('p.small', 'Erster W6 = Spalte, zweiter W6 = Zeile (Tabelle im Regelwerk unter „Tabellen & Listen“). Höchstwerte: 30" Reichweite, 2+ Treffen/Verwunden, Durchschlag 4, Schaden W3+4 – was darüber hinausginge, zählt als Fehlschlag. Treffen/Verwunden werden nie schlechter als 6+. Die Waffe ersetzt eine Waffe des Helden (keine Companion-Waffe) und zählt als Artefakt.'))), { wide: true, onClose: redraw });
+  draw();
 }
 
 function rorAction(markUsed) {
@@ -356,9 +396,9 @@ function commonManageActions(note, bw) {
       } }, 'Ausführen')),
     h('div.action', h('div.action-head', h('strong', 'Verbesserungen verwalten')), h('p.small', 'Artefakte zwischen Helden übertragen oder Verbesserungen entfernen – über „Bearbeiten“ an der Einheit.'),
       h('a.btn.small.ghost', { href: '#/c/armee' }, 'Zur Armee')),
-    h('div.action', h('div.action-head', h('strong', 'General wechseln')), h('p.small', 'Der alte General erleidet W3 Kampfwunden und behält seine Verbesserungen.'),
+    h('div.action', h('div.action-head', h('strong', 'General wechseln')), h('p.small', 'Der alte General erleidet W3 Kampfwunden und behält seine Verbesserungen. Er führt danach ein normales Regiment (höchstens 3 Einheiten – überzählige werden Hilfseinheiten).'),
       h('button.btn.small', { onClick: () => {
-        const c = us.filter(u => u.is_hero && !u.is_general && u.models <= 1);
+        const c = us.filter(u => u.is_hero && !u.is_general && u.models <= 1 && !u.reinforced && !u.data.ror);
         const g = us.find(u => u.is_general);
         if (!c.length || !g) return toast('Kein anderer Held verfügbar.', 'error');
         const sel = select(c.map(u => [u.id, u.name]), c[0].id);
@@ -393,39 +433,23 @@ function commonManageActions(note, bw) {
 }
 
 // ===================== Blighted Wilds =====================
-function oppPoints() {
-  const m = ctx.m, r = rep();
-  const other = ctx.side === 'a' ? m.player_b : m.player_a;
-  if (!other) return Number(r.guest_points) || 0;
-  return unitsOf(other).filter(u => unitStatus(m, u) !== 'rest').reduce((a, u) => a + unitPoints(u), 0);
-}
+// Punkte der gegnerischen Armee in dieser Schlacht (Stand beim Eintragen des Ergebnisses)
+function oppPoints() { return armyPoints(ctx.m, ctx.side === 'a' ? 'b' : 'a'); }
 
+const MAZE = 'A Dense and Choking Maze';
 function bwStep1() {
   const s = ctx.state.s1;
   const opp = oppPoints(), b = BW.bracket(opp), t = BW.gpTable;
   const g = generalOf(ctx.pid);
-  const gAlive = g && !repU(g.id).destroyed;
+  const gAlive = !g || !repU(g.id).destroyed;
   const res = ctx.m.result;
   const major = won() && isMajor(), minor = won() && !isMajor();
   const total = t.fought[b] + (major ? t.major[b] : 0) + (minor ? t.minor[b] : 0) + (gAlive ? t.generalAlive[b] : 0);
-  const bp = BW.battleplans[ctx.m.battleplan];
-  const rewardsOn = bp && (isMajor() || (ctx.m.battleplan === 'A Dense and Choking Maze' && res !== 'draw'));
-  const rewardBox = rewardsOn ? h('div.card',
-    h('h3', 'Belohnung: ' + ctx.m.battleplan),
-    h('p', won() ? 'Du hast gewonnen: wähle Fähigkeits- ODER Sonstige Belohnung. Dein Gegner erhält die andere.' : 'Dein Gegner hat gewonnen und wählt zuerst – du erhältst die Belohnung, die er nicht nimmt.'),
-    ctx.m.battleplan === 'A Dense and Choking Maze' && !isMajor() ? h('p.small.muted', 'Kleiner Sieg hier: Der Sieger würfelt – bei 5–6 darf stattdessen der Gegner wählen.') : null,
-    h('div.grid2',
-      h('div.action' + (s.reward === 'ability' ? '.used' : ''), h('strong', 'Fähigkeit: ' + bp.ability[0]), h('p.small', bp.ability[1] + ' (nur in deiner nächsten Schlacht)'),
-        s.reward ? (s.reward === 'ability' ? doneBox('gewählt') : null) : h('button.btn.small', { onClick: async () => {
-          await ops([{ op: 'player', fields: { data: { next_ability: `${bp.ability[0]}: ${bp.ability[1]}` } } }], `erhält die Belohnung „${bp.ability[0]}“ für die nächste Schlacht.`);
-          s.reward = 'ability'; await saveState(); redraw();
-        } }, 'Diese nehmen')),
-      h('div.action' + (s.reward === 'misc' ? '.used' : ''), h('strong', 'Sonstige Belohnung'), h('p.small', bp.misc),
-        s.reward ? (s.reward === 'misc' ? doneBox('gewählt') : null) : h('button.btn.small', { onClick: async () => { s.reward = 'misc'; await saveState(); redraw(); } }, 'Diese nehmen'))),
-    s.reward === 'misc' ? miscRewardActions(ctx.m.battleplan) : null) : null;
-  return h('div.stack', h('div.card',
+  const guestNoPts = !otherPlayer() && !opp;
+  const gpCard = h('div.card',
     h('h3', '1. Ruhmespunkte (Glory Points)'),
     h('p', `Armee des Gegners: ${opp} Punkte → Spalte „${t.brackets[b]}“.`),
+    guestNoPts ? h('p.problems', '⚠ Für die Gastarmee sind keine Punkte eingetragen – es gilt die kleinste Spalte. Der Master kann das Ergebnis korrigieren.') : null,
     h('table.table', h('tbody',
       h('tr', h('td', 'Schlacht geschlagen'), h('td', '+' + t.fought[b])),
       h('tr', h('td', 'Großer Sieg'), h('td', major ? '+' + t.major[b] : '–')),
@@ -433,9 +457,71 @@ function bwStep1() {
       h('tr', h('td', 'Dein General wurde nicht erschlagen'), h('td', gAlive ? '+' + t.generalAlive[b] : '–')),
       h('tr.total', h('td', 'Gesamt'), h('td', h('strong', total + ' GP'))))),
     s.applied ? doneBox(`${s.total} GP gutgeschrieben.`) : h('button.btn', { onClick: async () => {
-      await ops([{ op: 'player', fields: { vault_delta: total, vault_total_delta: total, data: { next_ability: null } } }], `erhält ${total} Ruhmespunkte (Aftermath Runde ${ctx.m.round}).`);
+      // Die Fähigkeits-Belohnung aus der vorigen Schlacht ist jetzt verbraucht – außer es wurde eben schon eine neue gewählt
+      const fields = { vault_delta: total, vault_total_delta: total };
+      if (s.reward !== 'ability') fields.data = { next_ability: null };
+      await ops([{ op: 'player', fields }], `erhält ${total} Ruhmespunkte (Aftermath Runde ${ctx.m.round}).`);
       s.applied = true; s.total = total; await saveState(); redraw();
-    } }, `${total} GP gutschreiben`)), rewardBox);
+    } }, `${total} GP gutschreiben`));
+  return h('div.stack', gpCard, isFinal(S().campaign.pack, ctx.m, ctx.m.battleplan, S().campaign.options) ? finalRewardBox() : rewardBox());
+}
+
+// Finale: Der Sieger heilt jede Einheit um W6 Kampfwunden und entfernt eine Narbe.
+function finalRewardBox() {
+  if (!(won() && isMajor())) return ctx.m.result === 'draw' ? h('div.card', h('h3', 'Finale'), h('p', 'Unentschieden – die Quelle der Verderbnis besteht weiter. Das Finale kann erneut ausgetragen werden.')) : null;
+  const s = ctx.state.s1; s.final = s.final || { heal: {} };
+  const f = s.final;
+  const wounded = myUnits().filter(u => u.battle_wounds > 0 || f.heal[u.id] != null);
+  return h('div.card.victory',
+    h('div.trophy', '🏆'), h('h3', 'Kampagnensieg!'),
+    h('p', 'Du hast die Quelle der Verderbnis vernichtet. Deine Krieger baden im gereinigten Wasser: Jede Einheit heilt W6 Kampfwunden, dann entfernst du bei einer Einheit eine Narbe. Die Trophäe „Purifiers of the Blighted Wilds“ (1× pro Schlacht: Heilen (3) bei jeder befreundeten Einheit) gilt auch in künftigen Kampagnen.'),
+    f.applied ? doneBox('Kampfwunden geheilt.') : wounded.length ? h('div',
+      wounded.map(u => h('p', h('strong', `${u.name} (${u.battle_wounds}): `), diceInput('D6', v => { f.heal[u.id] = v; return saveState(); }, { value: f.heal[u.id] }))),
+      h('button.btn.small', { onClick: async () => {
+        if (wounded.some(u => f.heal[u.id] == null)) return toast('Bitte erst für alle Einheiten würfeln.', 'error');
+        await ops(wounded.map(u => ({ op: 'update', id: u.id, fields: { battle_wounds: Math.max(0, u.battle_wounds - f.heal[u.id]) } })), 'Kampagnensieg: Kampfwunden im gereinigten Wasser geheilt.');
+        f.applied = true; await saveState(); redraw();
+      } }, 'Heilung anwenden')) : h('p.muted.small', 'Keine Einheit hat Kampfwunden.'),
+    f.scar ? doneBox(f.scar) : h('button.btn.small', { onClick: () => removeScarModal(text => { f.scar = text; saveState().then(redraw); }) }, 'Eine Narbe entfernen'));
+}
+
+// Belohnungen eines Schlachtplans: Der Sieger wählt Fähigkeits- ODER Sonstige Belohnung, der Gegner bekommt die andere.
+function rewardBox() {
+  const s = ctx.state.s1, res = ctx.m.result, name = ctx.m.battleplan;
+  const bp = BW.battleplans[name];
+  const mazeMinor = name === MAZE && !isMajor() && res !== 'draw';
+  if (!bp || !(isMajor() || mazeMinor)) return null;
+  const other = otherPlayer(), o1 = otherState().s1 || {};
+  // Dense Maze, kleiner Sieg: Der Sieger würfelt – 1–4 wählt er, 5–6 wählt der Gegner.
+  const mazeRoll = mazeMinor ? (won() ? s.maze_roll : o1.maze_roll) : null;
+  const winnerPicks = !mazeMinor || (mazeRoll != null && mazeRoll <= 4);
+  const iPick = !other ? true : mazeMinor && mazeRoll == null ? null : won() === winnerPicks;
+  const taken = other ? o1.reward : null; // was die Gegenseite schon genommen hat
+  const take = async kind => {
+    if (kind === 'ability') await ops([{ op: 'player', fields: { data: { next_ability: `${bp.ability[0]}: ${bp.ability[1]}` } } }], `erhält die Belohnung „${bp.ability[0]}“ für die nächste Schlacht.`);
+    s.reward = kind; await saveState(); redraw();
+  };
+  const option = (kind, title, text) => {
+    const mineNow = s.reward === kind;
+    const blocked = !s.reward && (taken === kind || (iPick === false && !taken && !s.override));
+    return h('div.action' + (mineNow ? '.used' : ''), h('strong', title), h('p.small', text),
+      mineNow ? doneBox('gewählt') : s.reward ? null : taken === kind ? h('p.tiny.muted', `hat ${other.name} genommen`)
+        : blocked ? h('p.tiny.muted', 'wartet auf die Wahl deines Gegners') : h('button.btn.small', { onClick: () => take(kind) }, iPick === false ? 'Diese erhalten' : 'Diese nehmen'));
+  };
+  const intro = iPick === null ? 'Kleiner Sieg auf diesem Schlachtplan: Der Sieger würfelt, wer wählen darf.'
+    : iPick ? (won() ? 'Du hast gewonnen: Wähle die Fähigkeits- ODER die Sonstige Belohnung. Dein Gegner erhält die andere.' : 'Du darfst wählen (Würfelwurf des Siegers): Fähigkeits- ODER Sonstige Belohnung. Dein Gegner erhält die andere.')
+      : taken ? `${other.name} hat gewählt – du erhältst die andere Belohnung.` : `${other.name} wählt zuerst – du erhältst die Belohnung, die übrig bleibt.`;
+  return h('div.card',
+    h('h3', 'Belohnung: ' + name),
+    h('p', intro),
+    mazeMinor ? (won()
+      ? h('p', 'Wer wählt? ', diceInput('D6', async v => { s.maze_roll = v; logDice(`Dense Maze, kleiner Sieg: ${v} → ${v <= 4 ? 'der Sieger wählt' : 'der Gegner wählt'}`); await saveState(); redraw(); }, { value: s.maze_roll, locked: true }), ' 1–4: du wählst · 5–6: dein Gegner wählt')
+      : h('p.small.muted', mazeRoll == null ? 'Der Sieger hat noch nicht gewürfelt (in seinem Aftermath).' : `Wurf des Siegers: ${mazeRoll} → ${mazeRoll <= 4 ? 'der Sieger wählt' : 'du wählst'}.`)) : null,
+    iPick === null ? null : h('div.grid2',
+      option('ability', 'Fähigkeit: ' + bp.ability[0], bp.ability[1] + ' (nur in deiner nächsten Schlacht)'),
+      option('misc', 'Sonstige Belohnung', bp.misc)),
+    iPick === false && !taken && !s.reward && !s.override ? h('p.tiny', h('button.btn.tiny.ghost', { onClick: async () => { if (await confirmBox('Habt ihr euch am Tisch abgesprochen, wer welche Belohnung nimmt? Dann kannst du deine jetzt schon eintragen.', 'Ja, eintragen')) { s.override = true; await saveState(); redraw(); } } }, 'Wir haben uns schon abgesprochen')) : null,
+    s.reward === 'misc' ? miscRewardActions(name) : null);
 }
 
 function miscRewardActions(bp) {
@@ -446,16 +532,17 @@ function miscRewardActions(bp) {
   const items = [];
   if (/Verbesserung/.test(BW.battleplans[bp].misc)) items.push(btn('Verbesserung vergeben', () => enhancementAction(0, () => doneMisc('Verbesserung vergeben'))));
   if (/Zauber/.test(BW.battleplans[bp].misc)) items.push(btn('Zauber/Gebet aufnehmen', () => tomeAction(0, () => doneMisc('Zauber/Gebet aufgenommen'))));
-  if (bp === 'Precarious Crossing') items.push(h('span', diceInput('10D6', async v => { await ops([{ op: 'player', fields: { vault_delta: v, vault_total_delta: v } }], `erhält ${v} GP (Precarious Crossing).`); doneMisc(`${v} GP erhalten`); })));
-  if (bp === 'Nexuses of Contamination') items.push(btn('W3+3 Kampfwunden heilen', () => healAmountModal('D3+3', 'Nexuses of Contamination', doneMisc)));
+  if (bp === 'Precarious Crossing') items.push(h('span', diceInput('10D6', async (v, viaApp) => { await ops([{ op: 'player', fields: { vault_delta: v, vault_total_delta: v } }], `erhält ${v} GP (Precarious Crossing, ${viaApp ? 'App-Würfel' : 'eingetragen'}).`); doneMisc(`${v} GP erhalten`); }, { locked: true })));
+  if (bp === 'Nexuses of Contamination') items.push(btn('W3+3 Kampfwunden heilen', () => healAmountModal('D3+3', 'Nexuses of Contamination', doneMisc, true)));
   if (bp === 'Vital Alignment') items.push(btn('Narbe entfernen', () => removeScarModal(doneMisc)));
   if (bp === 'Cursed Kernel') items.push(btn('Zweite Favoured Warriors im nächsten Schritt', () => { ctx.state.s2.extraFavoured = true; doneMisc('Zweite Favoured Warriors freigeschaltet'); }));
   if (bp === 'Creeping Rootstalks') items.push(btn('Als erledigt markieren', () => doneMisc('Eigenart/Upgrade notiert (Armee-Details)')));
   return h('div.row.wrap', items);
 }
 
-function healAmountModal(expr, why, done) {
-  const us = myUnits().filter(u => u.battle_wounds > 0);
+function healAmountModal(expr, why, done, onlyFought) {
+  // „eine Einheit, die an dieser Schlacht teilgenommen hat“
+  const us = myUnits().filter(u => u.battle_wounds > 0 && (!onlyFought || tookPart(u)));
   if (!us.length) { toast('Keine Einheit hat Kampfwunden.', 'info'); return done('Keine Wunden zu heilen'); }
   const sel = select(us.map(u => [u.id, `${u.name} (${u.battle_wounds})`]), us[0].id);
   let v = null;
@@ -482,8 +569,7 @@ function removeScarModal(done) {
 function bwStep2() {
   const s = ctx.state.s2;
   s.gain = s.gain || {};
-  const us = myUnits().filter(u => repU(u.id).status !== 'rest');
-  const g = generalOf(ctx.pid);
+  const us = myUnits().filter(tookPart);
   const rows = us.map(u => {
     const r = repU(u.id);
     const base = r.destroyed ? 1 : s.gain[u.id];
@@ -499,23 +585,27 @@ function bwStep2() {
   const apply = async () => {
     if (us.some(u => !repU(u.id).destroyed && s.gain[u.id] == null)) return toast('Bitte erst für alle Einheiten würfeln.', 'error');
     if (s.fav && s.favRoll == null) return toast('Bitte für die Favoured Warriors würfeln.', 'error');
+    if (s.fav2 && s.fav2Roll == null) return toast('Bitte für die zweiten Favoured Warriors würfeln.', 'error');
+    if (s.fav && s.fav === s.fav2) return toast('Die zweiten Favoured Warriors müssen eine andere Einheit sein.', 'error');
+    if (!s.fav && favOpts.length && !(await confirmBox('Du hast keine Favoured Warriors gewählt (+W6 Ruhm für eine Einheit). Trotzdem verteilen?', 'Verteilen'))) return;
     const list = [], ups = [];
     for (const u of us) {
       const r = repU(u.id);
       let add = (r.destroyed ? 1 : s.gain[u.id]) + (r.purify || 0) * 2;
       if (s.fav === u.id) add += s.favRoll || 0;
       if (s.fav2 === u.id) add += s.fav2Roll || 0;
-      const nr = u.renown + add, newRank = Math.max(u.rank, BW.rankFor(nr));
+      const nr = u.renown + add, newRank = isUnique(u) ? u.rank : Math.max(u.rank, BW.rankFor(nr)); // einzigartige Einheiten betreten keinen Pfad
       list.push({ op: 'update', id: u.id, fields: { renown: nr, rank: newRank } });
       if (newRank > u.rank) ups.push(`${u.name} → ${RANKS[newRank]}`);
     }
     await ops(list, `Ruhm verteilt${ups.length ? '; Rangaufstieg: ' + ups.join(', ') : ''}.`);
     s.applied = true; s.ups = ups; await saveState(); redraw();
   };
-  const needPick = myUnits().filter(u => u.rank > 0 && (!u.path || (u.data.abilities || []).filter(Boolean).length < u.rank));
+  const needPick = myUnits().filter(u => !isUnique(u) && u.rank > 0 && (!u.path || (u.data.abilities || []).filter(Boolean).length < u.rank));
   return h('div.card',
     h('h3', '2. Ruhm (Renown)'),
-    h('p.small', 'Jede beteiligte Einheit: +W3 (vernichtet: +1). Purify the Land: +2 je Erfolg. Favoured Warriors (nicht der General): +W6. Ränge: 5 Aspiring · 15 Elite · 30 Mighty · 45 Legendary.'),
+    h('p.small', 'Jede Einheit, die mitgekämpft hat: +W3 (vernichtet: +1). Purify the Land: +2 je Erfolg. Favoured Warriors (eine beteiligte Einheit, nicht der General): +W6. Ränge: 5 Aspiring · 15 Elite · 30 Mighty · 45 Legendary.'),
+    us.length ? null : h('p.muted.small', 'Keine deiner Einheiten hat an dieser Schlacht teilgenommen.'),
     s.applied ? null : rollAll,
     h('table.table', h('thead', h('tr', h('th', 'Einheit'), h('th', 'Ruhm'), h('th', 'Purify'))), h('tbody', rows)),
     h('div.grid2',
@@ -560,7 +650,7 @@ function bwStep3() {
       } }, 'Stattdessen auf „Exotisch“ würfeln (gratis)') : null,
       h('button.btn', { onClick: async () => { mm.close(); await addIngr(sel.value, cost, `Wurf ${roll}, gewählt`); } }, 'Nehmen')));
   };
-  const heroes = myUnits().filter(u => u.is_hero && !(u.data.keywords || '').includes('Einzigartig'));
+  const heroes = myUnits().filter(u => u.is_hero && !isUnique(u));
   const mix = () => {
     const can = BW.concoctions.filter(c => Object.entries(c.recipe).every(([k, n]) => (ingr[k] || 0) >= n));
     if (!can.length) return toast('Für kein Rezept genug Zutaten.', 'error');
@@ -620,9 +710,9 @@ function step4() {
   s.w = s.w || {}; s.tok = s.tok || {}; s.smoul = s.smoul || {}; s.rest = s.rest || {}; s.perm = s.perm || {}; s.permDice = s.permDice || {};
   const us = myUnits();
   const fallen = us.filter(u => casualties(u) > 0);
-  const destroyed = us.filter(u => repU(u.id).destroyed && !repU(u.id).untimely);
-  const tokenUnits = p.id === 'rc' ? us.filter(u => repU(u.id).token) : [];
-  const contaminated = p.id === 'bw' ? us.filter(u => repU(u.id).contaminated) : [];
+  const destroyed = us.filter(u => tookPart(u) && repU(u.id).destroyed && !repU(u.id).untimely);
+  const tokenUnits = p.id === 'rc' ? us.filter(u => tookPart(u) && repU(u.id).token) : [];
+  const contaminated = p.id === 'bw' ? us.filter(u => tookPart(u) && repU(u.id).contaminated && !repU(u.id).untimely) : [];
   const resting = us.filter(u => repU(u.id).status === 'rest');
   const smoulder = p.id === 'rc' ? us.filter(u => /Smouldering/.test((u.data.scars || {}).serious || '')) : [];
   const save = () => saveState();
@@ -634,23 +724,25 @@ function step4() {
       const n = casualties(u);
       if (s.wounds_applied) return h('p', h('strong', u.name + ': '), `${n} gestorben → ${s.perm[u.id] || 0} dauerhaft tot`);
       const manual = h('input.tiny-in', { type: 'number', min: 0, max: n, placeholder: 'Einsen', value: s.perm[u.id] ?? '' });
-      manual.addEventListener('change', () => { s.perm[u.id] = Math.min(n, Math.max(0, Number(manual.value) || 0)); s.permDice[u.id] = null; save().then(redraw); });
+      manual.addEventListener('change', () => { if (manual.value === '') return; s.perm[u.id] = Math.min(n, Math.max(0, Math.floor(Number(manual.value) || 0))); save().then(redraw); });
+      const rolled = !!s.permDice[u.id];
       return h('p', h('strong', u.name + ': '), `${n} Modell${n > 1 ? 'e' : ''} gestorben `,
-        h('button.btn.small.dice-btn', { onClick: async () => {
+        rolled ? null : h('button.btn.small.dice-btn', { onClick: async () => {
+          if (s.permDice[u.id]) return;
           const dice = Array.from({ length: n }, () => rollDie(6));
           s.permDice[u.id] = dice; s.perm[u.id] = dice.filter(d => d === 1).length;
           logDice(`${u.name}: ${n}×W6 für gestorbene Modelle → ${dice.join(', ')} (${s.perm[u.id]} dauerhaft tot)`);
           await save(); redraw();
-        } }, `🎲 ${n}×W6`), h('span.dice-or', ' oder Anzahl Einsen: '), manual,
+        } }, `🎲 ${n}×W6`), rolled ? null : h('span.dice-or', ' oder Anzahl Einsen: '), rolled ? null : manual,
         s.perm[u.id] != null ? h('strong', ` → ${s.perm[u.id]} dauerhaft tot${s.permDice[u.id] ? ' (' + s.permDice[u.id].join(', ') + ')' : ''}`) : null);
     }) : h('p.muted.small', 'Keine Verluste.')));
   sections.push(h('div', h('h4', 'Vernichtete Einheiten: je W3'), destroyed.length ? destroyed.map(u => h('p', h('strong', u.name + ': '), s.wounds_applied ? `+${s.w[u.id]}` : diceInput('D3', v => { s.w[u.id] = v; save(); }, { value: s.w[u.id] }))) : h('p.muted.small', 'Keine.')));
   if (p.id === 'rc') sections.push(h('div', h('h4', 'Emberstone-Marke am Ende: W6, bei 1–4 eine Kampfwunde'), tokenUnits.length ? tokenUnits.map(u => h('p', h('strong', u.name + ': '), s.wounds_applied ? (s.tok[u.id] <= 4 ? '+1' : 'verschont') : diceInput('D6', v => { s.tok[u.id] = v; save(); }, { value: s.tok[u.id] }))) : h('p.muted.small', 'Keine.')));
   if (p.id === 'bw') sections.push(h('div', h('h4', 'In 3" eines verseuchten Geländes: +1'), contaminated.length ? h('p', contaminated.map(u => u.name).join(', ')) : h('p.muted.small', 'Keine.')));
-  if (smoulder.length) sections.push(h('div', h('h4', 'Smouldering Scars: W6, bei 5+ W3 Kampfwunden'), smoulder.map(u => h('p', h('strong', u.name + ': '), s.wounds_applied ? (s.smoul[u.id] ? `+${s.smoul[u.id]}` : '–') : diceInput('D6', async v => { if (v >= 5) { const r = rollDie(3); s.smoul[u.id] = r; toast(`${u.name}: ${r} Kampfwunden`, 'info'); logDice(`${u.name} (Smouldering Scars): ${v} → ${r} Kampfwunden`); } else s.smoul[u.id] = 0; save(); })))));
+  if (smoulder.length) sections.push(h('div', h('h4', 'Smouldering Scars: W6, bei 5+ W3 Kampfwunden'), smoulder.map(u => h('p', h('strong', u.name + ': '), s.wounds_applied ? (s.smoul[u.id] ? `+${s.smoul[u.id]}` : '–') : s.smoulRoll && s.smoulRoll[u.id] != null ? `${s.smoulRoll[u.id]} → ${s.smoul[u.id] ? '+' + s.smoul[u.id] + ' Kampfwunden' : 'nichts'}` : diceInput('D6', async v => { s.smoulRoll = { ...(s.smoulRoll || {}), [u.id]: v }; if (v >= 5) { const r = rollDie(3); s.smoul[u.id] = r; logDice(`${u.name} (Smouldering Scars): ${v} → ${r} Kampfwunden`); } else s.smoul[u.id] = 0; await save(); redraw(); })))));
 
   const apply = async () => {
-    if (destroyed.some(u => s.w[u.id] == null) || tokenUnits.some(u => s.tok[u.id] == null) || resting.some(u => s.rest[u.id] == null) || fallen.some(u => s.perm[u.id] == null)) return toast('Bitte zuerst alle Würfe machen.', 'error');
+    if (destroyed.some(u => s.w[u.id] == null) || tokenUnits.some(u => s.tok[u.id] == null) || resting.some(u => s.rest[u.id] == null) || fallen.some(u => s.perm[u.id] == null) || smoulder.some(u => s.smoul[u.id] == null)) return toast('Bitte zuerst alle Würfe machen.', 'error');
     const list = [];
     const before = {};
     for (const u of us) {
@@ -659,9 +751,9 @@ function step4() {
       if (s.rest[u.id] != null) w = Math.max(0, w - s.rest[u.id]);
       if (s.w[u.id] != null) w += s.w[u.id];
       if (s.tok[u.id] != null && s.tok[u.id] <= 4) w += 1;
-      if (repU(u.id).contaminated && p.id === 'bw') w += 1;
+      if (contaminated.includes(u)) w += 1;
       if (s.smoul[u.id]) w += s.smoul[u.id];
-      const op = { op: 'update', id: u.id, fields: { battle_wounds: w, drained: 0 } };
+      const op = { op: 'update', id: u.id, fields: { battle_wounds: Math.min(99, w), drained: 0 } };
       if (s.perm[u.id]) op.data = { lost: Math.min(fullModels(u), (u.data.lost || 0) + s.perm[u.id]) };
       list.push(op);
     }
@@ -689,28 +781,32 @@ function step4() {
 
   // Heilungsrituale
   s.rituals = s.rituals || [];
-  const heroes = us.filter(u => u.is_hero);
+  const heroes = us.filter(u => u.is_hero && aliveModels(u) > 0);
+  const scarsOpen = scarRows.length > 0;
   const ritualBox = s.wounds_applied ? h('div',
     h('h4', `Heilungsrituale (${s.rituals.length}/2)`),
     s.rituals.map(r => h('p.small', '✓ ' + r)),
-    s.rituals.length < 2 && heroes.length ? (() => {
-      const hs = select(heroes.filter(x => !s.rituals.some(r => r.startsWith(x.name + ':'))).map(u => [u.id, u.name]));
+    scarsOpen ? h('p.muted.small', 'Erst die Narben oben abhandeln – Narben werden vor dem Heilen bestimmt.') : null,
+    !scarsOpen && !s.ritualOpen && s.rituals.length < 2 && heroes.length ? (() => {
+      const free = heroes.filter(x => !(s.ritualHeroes || []).includes(x.id));
+      if (!free.length) return h('p.muted.small', 'Kein weiterer Held verfügbar.');
+      const hs = select(free.map(u => [u.id, u.name]));
       return h('div.row.wrap', hs, diceInput('D6', async v => {
         const hero = heroes.find(x => x.id === hs.value);
+        hs.disabled = true;
+        s.ritualHeroes = [...(s.ritualHeroes || []), hero.id];
         if (v === 1) {
           await ops([{ op: 'update', id: hero.id, fields: { drained: 1 } }], `${hero.name}: Heilungsritual misslingt – erschöpft bis Ende der nächsten Schlacht.`);
           s.rituals.push(`${hero.name}: 1 – misslungen, erschöpft`); await saveState(); redraw(); return;
         }
         const wounded = myUnits().filter(x => x.battle_wounds > 0);
         if (!wounded.length) { s.rituals.push(`${hero.name}: ${v} – niemand verwundet`); await saveState(); redraw(); return; }
-        const t = select(wounded.map(x => [x.id, `${x.name} (${x.battle_wounds})`]), wounded[0].id);
-        const mm = modal(`${hero.name} heilt ${v} Kampfwunden`, h('div', field('Einheit', t), h('button.btn', { onClick: async () => {
-          const u = wounded.find(x => x.id === t.value);
-          await ops([{ op: 'update', id: u.id, fields: { battle_wounds: Math.max(0, u.battle_wounds - v) } }], `${hero.name} heilt ${Math.min(v, u.battle_wounds)} Kampfwunden bei ${u.name}.`);
-          s.rituals.push(`${hero.name}: ${v} – ${u.name} geheilt`); await saveState(); mm.close(); redraw();
-        } }, 'Heilen')));
+        // Der Wurf steht fest – auch wenn das Fenster geschlossen wird, bleibt er gemerkt (kein Neuwürfeln)
+        s.ritualOpen = { hero: hero.id, name: hero.name, v }; await saveState();
+        ritualHealModal(s, wounded, hero.name, v);
       }, { label: 'würfelt' }));
     })() : null,
+    s.ritualOpen ? h('p', badge(`${s.ritualOpen.name} hat eine ${s.ritualOpen.v} gewürfelt`, 'gold'), ' ', h('button.btn.small', { onClick: () => ritualHealModal(s, myUnits().filter(x => x.battle_wounds > 0), s.ritualOpen.name, s.ritualOpen.v) }, 'Einheit zum Heilen wählen')) : null,
     h('p.tiny.muted', p.id === 'bw' ? 'Erschöpft: kein „Purify the Land“, kein Ziel von „Boon of Vitality“.' : 'Erschöpft: −1 auf Zauber-, Gebets- und Trefferwürfe.')) : null;
 
   return h('div.card',
@@ -815,6 +911,7 @@ function step5() {
       h('p.small', 'Jede Einheit braucht pro Runde so viel Nahrung, wie ihre lebenden Modelle Punkte kosten (abzüglich des Feld-Anteils). Wer nicht gefüttert wird, hungert; hungert sie zwei Runden hintereinander, verlässt sie die Armee.'),
       feedRows,
       short ? h('p.problems', `⚠ Es fehlen ${need - avail} Nahrung – nimm Einheiten aus der Fütterung.`) : null,
+      us.some(u => u.is_general && livePoints(u) > 0 && !s.feed[u.id] && u.data.hungry) ? h('p.problems', '⚠ Dein General hungert bereits – ohne Futter verlässt er die Armee, und du brauchst einen neuen General.') : null,
       h('button.btn', { disabled: short, onClick: async () => {
         const list = [{ op: 'player', fields: { data_delta: { food: income - need, food_total: income } } }];
         const gone = [], hungry = [];
@@ -834,6 +931,16 @@ function step5() {
     h('h4', 'Aufträge dieser Runde'),
     jobRows.length ? jobRows : h('p.muted.small', 'Keine Einheit hatte einen Auftrag. Aufträge vergibst du zu Beginn jeder Runde unter „Lage“ oder „Armee“.'),
     goldBox, feedBox);
+}
+
+function ritualHealModal(s, wounded, heroName, v) {
+  if (!wounded.length) { s.rituals.push(`${heroName}: ${v} – niemand verwundet`); s.ritualOpen = null; saveState().then(redraw); return; }
+  const t = select(wounded.map(x => [x.id, `${x.name} (${x.battle_wounds})`]), wounded[0].id);
+  const mm = modal(`${heroName} heilt ${v} Kampfwunden`, h('div', field('Einheit', t), h('button.btn', { onClick: async () => {
+    const u = wounded.find(x => x.id === t.value);
+    await ops([{ op: 'update', id: u.id, fields: { battle_wounds: Math.max(0, u.battle_wounds - v) } }], `${heroName} heilt ${Math.min(v, u.battle_wounds)} Kampfwunden bei ${u.name}.`);
+    s.rituals.push(`${heroName}: ${v} – ${u.name} geheilt`); s.ritualOpen = null; await saveState(); mm.close();
+  } }, 'Heilen')), { onClose: redraw });
 }
 
 async function succumb(u) {

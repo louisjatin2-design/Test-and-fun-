@@ -68,8 +68,8 @@ export const PACKS = {
     zones: {
       outskirts: { name: 'Scorched Outskirts', color: '#7a3b1d', need: 'Immer zugänglich' },
       gnaw: { name: "Gnaw's Edge", color: '#5b6b1f', need: 'Ab 20 gesammelten Splittern (gesamt)' },
-      shores: { name: 'Hateful Shores', color: '#1f5a6b', need: "Nach einem Sieg in Gnaw's Edge" },
-      claw: { name: "Hel's Claw", color: '#8a1414', need: 'Nach einem Sieg in den Hateful Shores' },
+      shores: { name: 'Hateful Shores', color: '#1f5a6b', need: "Nach einem Sieg mit einem Gnaw's-Edge-Schlachtplan" },
+      claw: { name: "Hel's Claw", color: '#8a1414', need: 'Nach einem Sieg mit einem Hateful-Shores-Schlachtplan' },
     },
     zoneOrder: ['outskirts', 'gnaw', 'shores', 'claw'],
     nodes: RC_NODES,
@@ -77,6 +77,13 @@ export const PACKS = {
     starts: ['o1', 'o4', 'o7', 'o8'],
     movement: 'adjacent',
     finalBattleplan: "Raid on Hel's Claw",
+    // Schlachtplan-Tabellen je Zone: [Würfelergebnis oder Bereich, Schlachtplan]
+    tables: {
+      outskirts: { name: 'Scorched Outskirts', die: 'W6', rows: [[1, 'Rift in the Peaks'], [2, 'Rise Through the Ashes'], [3, 'Standing on Skulls'], [4, 'Ransack the Encampment'], [5, 'Blood in the Valleys'], [6, 'Light the Fires']] },
+      gnaw: { name: "Gnaw's Edge", die: 'W6', rows: [[[1, 3], 'Twisted by Rage'], [[4, 6], 'Storm the Land Bridge']] },
+      shores: { name: 'Hateful Shores', die: 'W6', rows: [[[1, 2], 'Beneath the Shadow of Brazenskull'], [[3, 4], 'Assault on the Sea Cave'], [[5, 6], 'Along the Crumbling Coast']] },
+      claw: { name: "Hel's Claw", die: '—', rows: [[[1, 6], "Raid on Hel's Claw"]] },
+    },
     wahapedia: 'https://wahapedia.ru/aos4/the-rules/ravaged-coast/',
   },
   bw: {
@@ -153,4 +160,45 @@ export function discoverRoutes(packId, unlocked, bpKey, wonIt, wonSet) {
     if (l.type === 'trail' && wins.has(bpKey)) set.add(l.to);
   }
   return [...set];
+}
+
+// ---------- Begegnungen & Schlachtpläne (Server und Browser nutzen dieselben Regeln) ----------
+
+// Ravaged Coast: Welche Schlachtplan-Tabelle gilt für eine Begegnung?
+// Offizielle Regel: Gnaw's Edge bzw. Hateful Shores, sobald MINDESTENS EIN Spieler sie freigeschaltet hat;
+// Hel's Claw nur, wenn BEIDE Spieler dort stehen (also beide in den Hateful Shores gewonnen haben).
+// kind: 'pvp' | 'pair' | 'guest'; zoneB ist bei Gastspielen egal.
+export function encounterTable(kind, zoneA, zoneB, guestFinal) {
+  const order = PACKS.rc.zoneOrder;
+  const a = order.includes(zoneA) ? zoneA : 'outskirts';
+  if (kind === 'guest') return a === 'claw' && !guestFinal ? 'shores' : a;
+  const b = order.includes(zoneB) ? zoneB : a;
+  if (a === 'claw' && b === 'claw') return 'claw';
+  const hi = order.indexOf(a) >= order.indexOf(b) ? a : b;
+  return hi === 'claw' ? 'shores' : hi;
+}
+
+// Welche Schlachtpläne dürfen in diesem Spiel gespielt werden?
+// match: { kind, table_key, player_b }, dataA/dataB: Spielerdaten (unlocked), options: Kampagnen-Optionen
+export function battleplanChoices(packId, match, dataA, dataB, options) {
+  const p = packOf(packId);
+  const guestFinal = !!(options && options.guest_final);
+  if (p.id === 'rc') {
+    const t = p.tables[match.table_key] || p.tables.outskirts;
+    return t.rows.map(r => r[1]);
+  }
+  const un = d => new Set(d && d.unlocked && d.unlocked.length ? d.unlocked : p.startUnlocked);
+  const ua = un(dataA);
+  const ub = match.player_b ? un(dataB) : ua;
+  return p.nodes.filter(n => ua.has(n.key) && ub.has(n.key))
+    .filter(n => match.player_b || guestFinal || n.name !== p.finalBattleplan)
+    .map(n => n.name);
+}
+
+// Zählt dieses Spiel als Kampagnen-Finale?
+export function isFinal(packId, match, battleplan, options) {
+  const p = packOf(packId);
+  if (battleplan !== p.finalBattleplan) return false;
+  if (!match.player_b && !(options && options.guest_final)) return false;
+  return p.id === 'rc' ? match.table_key === 'claw' : true;
 }
